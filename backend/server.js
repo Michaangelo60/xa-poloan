@@ -50,6 +50,15 @@ app.use('/api/test', testEmailRoutes);
   // Dev helper routes (only use in local/dev environment)
   app.use('/api/dev', devRoutes);
 
+// Lightweight health check for load balancers and Render
+app.get('/api/health', (req, res) => {
+  try {
+    return res.json({ ok: true, uptime: process.uptime(), timestamp: Date.now() });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
 // Serve frontend static files (optional)
 app.use(express.static(path.join(__dirname, '..', 'frontend-xapobank')));
 // Also serve the sign-up / sign-in pages under /signsignup URI by mapping to the
