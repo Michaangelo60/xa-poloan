@@ -15,10 +15,6 @@ const devRoutes = require('./routes/dev');
 
 
 
-app.use(cors({
-  origin: 'https://xapoloan.vercel.app',
-  credentials: true
-}));
 
 
 
@@ -109,4 +105,5 @@ const start = async () => {
 start();
 
 module.exports = app;
+
 
