@@ -46,7 +46,10 @@ app.get('/.well-known/appspecific/com.chrome.devtools.json', (req, res) => {
 // Serve a small runtime config JS so static sites can read backend URL at runtime.
 app.get('/config.js', (req, res) => {
   try {
-    const apiBase = (config.CLIENT_URL || '').replace(/\/$/, '');
+    // Return the backend's origin so static frontends know where to reach the API.
+    // Prefer an explicit env var `BACKEND_ORIGIN` (for proxies or custom domains),
+    // otherwise derive from the incoming request host.
+    const apiBase = (process.env.BACKEND_ORIGIN || (req.protocol + '://' + req.get('host'))).replace(/\/$/, '');
     res.type('application/javascript');
     return res.send(`window.API_BASE = '${apiBase}';`);
   } catch (e) {
