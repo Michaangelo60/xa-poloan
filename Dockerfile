@@ -4,7 +4,7 @@ FROM node:18-alpine
 WORKDIR /app
 
 # Install app dependencies (production only)
-COPY package*.json ./
+COPY package.json ./
 RUN npm ci --only=production
 
 # Copy app source
@@ -15,3 +15,4 @@ EXPOSE 5000
 
 # Start the server
 CMD ["node", "server.js"]
+
