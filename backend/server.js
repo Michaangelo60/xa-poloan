@@ -59,16 +59,6 @@ app.get('/api/health', (req, res) => {
   }
 });
 
-// Redirect root to signup page so the startup page is signup
-app.get('/', (req, res) => {
-  return res.redirect('/signsignup/signup.html');
-});
-
-
-
-
-
-
 // Serve frontend static files (optional)
 app.use(express.static(path.join(__dirname, '..', 'frontend-xapobank')));
 // Also serve the sign-up / sign-in pages under /signsignup URI by mapping to the
@@ -81,6 +71,8 @@ app.use('/frontend-xapobank', express.static(path.join(__dirname, '..', 'fronten
 // Serve the standalone admin site so it can be accessed over HTTP (avoids file:// CSP restrictions)
 app.use('/admin', express.static(path.join(__dirname, '..', 'transaction-admin-site')));
 // Admin UI removed
+
+// Serve the root normally; client-side will redirect unauthenticated users to signup.
 
 const start = async () => {
   try {
@@ -109,4 +101,3 @@ const start = async () => {
 start();
 
 module.exports = app;
-
