@@ -59,6 +59,16 @@ app.get('/api/health', (req, res) => {
   }
 });
 
+// Redirect root to signup page so the startup page is signup
+app.get('/', (req, res) => {
+  return res.redirect('/signsignup/signup.html');
+});
+
+
+
+
+
+
 // Serve frontend static files (optional)
 app.use(express.static(path.join(__dirname, '..', 'frontend-xapobank')));
 // Also serve the sign-up / sign-in pages under /signsignup URI by mapping to the
@@ -99,3 +109,4 @@ const start = async () => {
 start();
 
 module.exports = app;
+
