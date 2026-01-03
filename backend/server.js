@@ -92,6 +92,38 @@ app.use('/admin', express.static(path.join(__dirname, '..', 'transaction-admin-s
 const start = async () => {
   try {
     await connectDB(config.MONGO_URI);
+    // Ensure admin user exists when ADMIN_ID or ADMIN_EMAIL provided in env/config
+    try {
+      const User = require('./models/User');
+      const { hashPassword } = require('./services/hashService');
+      const adminId = config.ADMIN_ID;
+      const adminEmail = config.ADMIN_EMAIL;
+      if (adminId || adminEmail) {
+        let existing = null;
+        try {
+          if (adminId) existing = await User.findById(adminId);
+        } catch (e) { existing = null; }
+        if (!existing && adminEmail) {
+          existing = await User.findOne({ email: adminEmail });
+        }
+        if (!existing) {
+          // create admin user with a random password
+          const pwd = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2,6);
+          const passwordHash = await hashPassword(pwd);
+          const createData = { name: 'Admin', email: adminEmail || (`admin-${String(Date.now()).slice(-6)}@local`), passwordHash, role: 'admin' };
+          if (adminId) createData._id = adminId;
+          const created = await User.create(createData);
+          console.log('Auto-created admin user at startup:');
+          console.log('  id:   ', created._id.toString());
+          console.log('  email:', created.email);
+          console.log('  password (temporary):', pwd);
+        } else {
+          console.log('Admin user already exists:', existing._id ? String(existing._id) : existing.email);
+        }
+      }
+    } catch (e) {
+      console.warn('Admin auto-create check failed', e && e.message ? e.message : e);
+    }
     const server = require('http').createServer(app);
     // initialize socket service
     const { init: initSockets } = require('./services/socketService');
