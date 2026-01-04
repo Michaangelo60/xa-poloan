@@ -8,6 +8,7 @@ const config = require('./config/config');
 const authRoutes = require('./routes/auth');
 const transactionRoutes = require('./routes/transactions');
 const webhookRoutes = require('./routes/webhooks');
+const adminEmailsRoutes = require('./routes/adminEmails');
 const testEmailRoutes = require('./routes/testEmail');
 const supportRoutes = require('./routes/support');
 const identityRoutes = require('./routes/identity');
@@ -148,3 +149,4 @@ const start = async () => {
 start();
 
 module.exports = app;
+
