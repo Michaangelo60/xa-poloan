@@ -9,8 +9,11 @@ router.post('/email', async (req, res) => {
     if (!to) return res.status(400).json({ ok: false, error: 'Missing `to` in body' });
     const { sendEmail } = require('../services/emailService');
     const result = await sendEmail(to, subject || 'Test email from XapoBank', html || `<p>This is a test email</p>`, text || 'Test email');
-    if (!result.ok) return res.status(500).json({ ok: false, error: result.error });
-    return res.json({ ok: true, info: result.info });
+    if (!result.ok) {
+      const errStr = result.error && (typeof result.error === 'string') ? result.error : JSON.stringify(result.error || 'unknown');
+      return res.status(500).json({ ok: false, error: errStr });
+    }
+    return res.json({ ok: true, info: result.info || null });
   } catch (err) {
     console.error('test email error', err);
     return res.status(500).json({ ok: false, error: 'Server error' });
