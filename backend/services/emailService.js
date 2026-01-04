@@ -23,7 +23,14 @@ function createTransporter() {
   const secure = String(process.env.SMTP_SECURE || 'false') === 'true';
   const auth = process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined;
   try {
-    return nodemailer.createTransport({ host, port, secure, auth });
+    const transporter = nodemailer.createTransport({ host, port, secure, auth });
+    // Helpful quick verification during startup/send.
+    transporter.verify().then(() => {
+      console.debug('Email transporter verified OK', { host, port, secure });
+    }).catch(err => {
+      console.warn('Email transporter verify failed', String(err));
+    });
+    return transporter;
   } catch (err) {
     console.error('createTransporter error', err);
     return null;
@@ -40,11 +47,16 @@ async function sendEmail(to, subject, html, text, attachments) {
     const from = process.env.NOTIFY_FROM || process.env.SMTP_USER || 'no-reply@example.com';
     const mailOpts = { from, to, subject, text: text || undefined, html: html || undefined };
     if (attachments && Array.isArray(attachments) && attachments.length > 0) mailOpts.attachments = attachments;
-    const info = await transporter.sendMail(mailOpts);
-    return { ok: true, info };
+    try {
+      const info = await transporter.sendMail(mailOpts);
+      return { ok: true, info: { messageId: info && info.messageId, response: info && info.response } };
+    } catch (sendErr) {
+      console.error('sendEmail sendMail error', sendErr && sendErr.message ? sendErr.message : sendErr);
+      return { ok: false, error: sendErr && sendErr.message ? sendErr.message : String(sendErr) };
+    }
   } catch (err) {
-    console.error('sendEmail error', err);
-    return { ok: false, error: err };
+    console.error('sendEmail error', err && err.message ? err.message : err);
+    return { ok: false, error: err && err.message ? err.message : String(err) };
   }
 }
 
