@@ -1,4 +1,6 @@
 const nodemailer = require('nodemailer');
+const fs = require('fs');
+const path = require('path');
 
 // Reads SMTP configuration from env. Set the following in backend/.env:
 // SMTP_HOST, SMTP_PORT, SMTP_SECURE (true/false), SMTP_USER, SMTP_PASS, NOTIFY_FROM
@@ -39,6 +41,24 @@ function createTransporter() {
 
 async function sendEmail(to, subject, html, text, attachments) {
   try {
+    // Development fallback: if EMAIL_FAKE=true or EMAIL_BACKEND=file, write email to disk
+    const useFileBackend = (String(process.env.EMAIL_FAKE || '').toLowerCase() === 'true')
+      || (String(process.env.EMAIL_BACKEND || '').toLowerCase() === 'file');
+    if (useFileBackend) {
+      try {
+        const outDir = path.join(__dirname, '..', 'tmp_emails');
+        fs.mkdirSync(outDir, { recursive: true });
+        const fileName = `${Date.now()}-${(Math.random()*1e9|0)}.json`;
+        const filePath = path.join(outDir, fileName);
+        const payload = { to, subject, text: text || null, html: html || null, attachments: attachments || null, createdAt: new Date().toISOString() };
+        fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
+        console.info('Email written to file (EMAIL_FAKE active):', filePath);
+        return { ok: true, info: { file: filePath } };
+      } catch (fileErr) {
+        console.error('EMAIL_FAKE file write failed', fileErr);
+        return { ok: false, error: String(fileErr) };
+      }
+    }
     const transporter = createTransporter();
     if (!transporter) {
       console.warn('Email not configured (SMTP_HOST missing) — skipping sendEmail');
