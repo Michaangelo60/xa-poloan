@@ -8,8 +8,9 @@ const config = require('./config/config');
 const authRoutes = require('./routes/auth');
 const transactionRoutes = require('./routes/transactions');
 const webhookRoutes = require('./routes/webhooks');
-const adminEmailsRoutes = require('./routes/adminEmails');
 const testEmailRoutes = require('./routes/testEmail');
+const adminEmailsRoutes = require('./routes/adminEmails');
+const adminUsersRoutes = require('./routes/adminUsers');
 const supportRoutes = require('./routes/support');
 const identityRoutes = require('./routes/identity');
 const devRoutes = require('./routes/dev');
@@ -135,6 +136,9 @@ const start = async () => {
     app.use('/api/identity', identityRoutes);
       // support route
       app.use('/api/support', supportRoutes);
+    // admin debug routes (list fake-sent emails)
+    app.use('/api/admin', adminEmailsRoutes);
+    app.use('/api/admin', adminUsersRoutes);
     // mount webhook routes
     app.use('/api/webhooks', webhookRoutes);
     server.listen(config.PORT, () => {
@@ -149,4 +153,3 @@ const start = async () => {
 start();
 
 module.exports = app;
-
