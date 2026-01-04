@@ -25,12 +25,18 @@ function createTransporter() {
   const secure = String(process.env.SMTP_SECURE || 'false') === 'true';
   const auth = process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined;
   try {
-    const transporter = nodemailer.createTransport({ host, port, secure, auth });
+    const emailDebug = String(process.env.EMAIL_DEBUG || '').toLowerCase() === 'true';
+    const transportOpts = { host, port, secure, auth, logger: emailDebug, debug: emailDebug };
+    // avoid logging secrets
+    const logSafe = { host, port, secure, user: auth && auth.user ? auth.user : undefined, debug: emailDebug };
+    console.debug('Creating email transporter', logSafe);
+    const transporter = nodemailer.createTransport(transportOpts);
     // Helpful quick verification during startup/send.
     transporter.verify().then(() => {
-      console.debug('Email transporter verified OK', { host, port, secure });
+      console.debug('Email transporter verified OK', logSafe);
     }).catch(err => {
-      console.warn('Email transporter verify failed', String(err));
+      console.warn('Email transporter verify failed', err && err.message ? err.message : String(err));
+      if (emailDebug && err && err.stack) console.warn(err.stack);
     });
     return transporter;
   } catch (err) {
