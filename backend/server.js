@@ -11,6 +11,7 @@ const webhookRoutes = require('./routes/webhooks');
 const testEmailRoutes = require('./routes/testEmail');
 const adminEmailsRoutes = require('./routes/adminEmails');
 const adminUsersRoutes = require('./routes/adminUsers');
+const adminTransactionsRoutes = require('./routes/adminTransactions');
 const supportRoutes = require('./routes/support');
 const identityRoutes = require('./routes/identity');
 const devRoutes = require('./routes/dev');
@@ -139,6 +140,7 @@ const start = async () => {
     // admin debug routes (list fake-sent emails)
     app.use('/api/admin', adminEmailsRoutes);
     app.use('/api/admin', adminUsersRoutes);
+    app.use('/api/admin', adminTransactionsRoutes);
     // mount webhook routes
     app.use('/api/webhooks', webhookRoutes);
     server.listen(config.PORT, () => {
