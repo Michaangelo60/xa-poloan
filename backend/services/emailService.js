@@ -67,8 +67,22 @@ async function sendEmail(to, subject, html, text, attachments) {
     }
     const transporter = createTransporter();
     if (!transporter) {
-      console.warn('Email not configured (SMTP_HOST missing) — skipping sendEmail');
-      return { ok: false, error: 'Email not configured' };
+      // If SMTP isn't configured, fall back to writing the email to disk so developers
+      // and deploy logs can still inspect outgoing messages. This makes notifications
+      // visible during testing even when SMTP env vars are missing.
+      try {
+        const outDir = path.join(__dirname, '..', 'tmp_emails');
+        fs.mkdirSync(outDir, { recursive: true });
+        const fileName = `${Date.now()}-${(Math.random()*1e9|0)}.json`;
+        const filePath = path.join(outDir, fileName);
+        const payload = { to, subject, text: text || null, html: html || null, attachments: attachments || null, createdAt: new Date().toISOString(), fallback: true };
+        fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
+        console.warn('SMTP not configured; email written to file fallback:', filePath);
+        return { ok: true, info: { file: filePath, fallback: true } };
+      } catch (fileErr) {
+        console.error('Email fallback file write failed', fileErr && fileErr.message ? fileErr.message : fileErr);
+        return { ok: false, error: String(fileErr) };
+      }
     }
     const from = process.env.NOTIFY_FROM || process.env.SMTP_USER || 'no-reply@example.com';
     const mailOpts = { from, to, subject, text: text || undefined, html: html || undefined };
