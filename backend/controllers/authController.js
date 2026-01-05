@@ -7,12 +7,14 @@ const path = require('path');
 
 exports.register = async (req, res) => {
   try {
-    const { fullName, email, password, phone, country } = req.body;
+    // Accept either `name` or `fullName` from clients (some frontends send `name`).
+    const { name, fullName, email, password, phone, country } = req.body;
+    const userName = (name || fullName || '').trim();
     if (!email || !password) return res.status(400).json({ success: false, message: 'Missing fields' });
     const existing = await User.findOne({ email });
     if (existing) return res.status(400).json({ success: false, message: 'Email already exists' });
     const passwordHash = await hashPassword(password);
-    const user = await User.create({ name: fullName, email, passwordHash, phone: phone || '', country: country || '' });
+    const user = await User.create({ name: userName, email, passwordHash, phone: phone || '', country: country || '' });
     const payload = { id: user._id, email: user.email, name: user.name, phone: user.phone, country: user.country, createdAt: user.createdAt, isMember: user.isMember, role: user.role };
     const token = signToken({ id: user._id, email: user.email, name: user.name, role: user.role });
 
