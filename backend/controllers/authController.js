@@ -48,11 +48,13 @@ exports.login = async (req, res) => {
   try {
     // Debug: log incoming payload to help diagnose empty responses during login
     try { console.debug('DEBUG /api/auth/login request body:', req && req.body); } catch (e) {}
-    const { email, password } = req.body;
+    let { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ success: false, message: 'Missing fields' });
+    email = String(email).trim().toLowerCase();
     const user = await User.findOne({ email });
-    if (!user) return res.status(401).json({ success: false, message: 'Invalid credentials' });
-    const ok = await comparePassword(password, user.passwordHash);
+    if (!user || !user.passwordHash) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    let ok = false;
+    try { ok = await comparePassword(password, user.passwordHash); } catch (e) { ok = false; }
     if (!ok) return res.status(401).json({ success: false, message: 'Invalid credentials' });
     const token = signToken({ id: user._id, email: user.email, name: user.name, role: user.role });
     // include createdAt, membership flag and role for client UI
