@@ -44,6 +44,8 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
   try {
+    // Debug: log incoming payload to help diagnose empty responses during login
+    try { console.debug('DEBUG /api/auth/login request body:', req && req.body); } catch (e) {}
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ success: false, message: 'Missing fields' });
     const user = await User.findOne({ email });
@@ -53,6 +55,8 @@ exports.login = async (req, res) => {
     const token = signToken({ id: user._id, email: user.email, name: user.name, role: user.role });
     // include createdAt, membership flag and role for client UI
     const payload = { id: user._id, email: user.email, name: user.name, createdAt: user.createdAt, isMember: user.isMember, role: user.role };
+    // Debug: log response payload
+    try { console.debug('DEBUG /api/auth/login response:', { success: true, token: token ? '[REDACTED]' : token, data: payload }); } catch (e) {}
     return res.json({ success: true, token, data: payload });
   } catch (err) {
     console.error(err);
