@@ -172,6 +172,20 @@ exports.getTransactions = async (req, res) => {
       }
     } catch (e) { /* ignore token parse errors */ }
     const filter = {};
+    // Allow filtering by status and type via query params (e.g. ?status=pending&type=deposit)
+    try {
+      if (req.query && req.query.status) {
+        // support comma-separated or single value
+        const qs = String(req.query.status).split(',').map(s => s.trim()).filter(Boolean);
+        if (qs.length === 1) filter.status = qs[0];
+        else filter.status = { $in: qs };
+      }
+      if (req.query && req.query.type) {
+        const qt = String(req.query.type).split(',').map(s => s.trim()).filter(Boolean);
+        if (qt.length === 1) filter.type = qt[0];
+        else filter.type = { $in: qt };
+      }
+    } catch (e) { /* ignore parse errors */ }
 
     // If a specific userId is requested, only admins can request other users' transactions.
     if (req.query.userId) {
