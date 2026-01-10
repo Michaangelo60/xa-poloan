@@ -101,3 +101,19 @@ async function sendEmail(to, subject, html, text, attachments) {
 }
 
 module.exports = { sendEmail };
+
+// Expose a helper to verify transporter connectivity for diagnostics
+module.exports.verifyTransporter = async function verifyTransporter() {
+  try {
+    const transporter = createTransporter();
+    if (!transporter) return { ok: false, error: 'no-transporter-configured' };
+    try {
+      await transporter.verify();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : String(e) };
+  }
+};
