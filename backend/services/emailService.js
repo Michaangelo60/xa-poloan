@@ -216,3 +216,6 @@ async function sendViaSendGrid(opts, apiKey) {
     return { ok: false, error: err && err.message ? err.message : String(err) };
   }
 }
+
+// Export helper for direct SendGrid testing
+module.exports.sendViaSendGrid = sendViaSendGrid;
