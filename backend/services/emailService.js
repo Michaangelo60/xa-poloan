@@ -27,9 +27,23 @@ function createTransporter() {
   const auth = process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined;
   try {
     const emailDebug = String(process.env.EMAIL_DEBUG || '').toLowerCase() === 'true';
-    const transportOpts = { host, port, secure, auth, logger: emailDebug, debug: emailDebug };
+    // Allow tuning timeouts via env or sensible defaults (ms)
+    const connectionTimeout = Number(process.env.SMTP_CONN_TIMEOUT || process.env.SMTP_CONNECTION_TIMEOUT || 10000);
+    const greetingTimeout = Number(process.env.SMTP_GREETING_TIMEOUT || 10000);
+    const socketTimeout = Number(process.env.SMTP_SOCKET_TIMEOUT || 30000);
+    const transportOpts = {
+      host,
+      port,
+      secure,
+      auth,
+      logger: emailDebug,
+      debug: emailDebug,
+      connectionTimeout,
+      greetingTimeout,
+      socketTimeout
+    };
     // avoid logging secrets
-    const logSafe = { host, port, secure, user: auth && auth.user ? auth.user : undefined, debug: emailDebug };
+    const logSafe = { host, port, secure, user: auth && auth.user ? auth.user : undefined, debug: emailDebug, connectionTimeout };
     console.debug('Creating email transporter', logSafe);
     const transporter = nodemailer.createTransport(transportOpts);
     // Helpful quick verification during startup/send.
@@ -95,18 +109,22 @@ async function sendEmail(to, subject, html, text, attachments) {
       const sendMsg = sendErr && sendErr.message ? sendErr.message : String(sendErr);
       console.error('sendEmail sendMail error', sendMsg);
 
-      // If SMTP send fails (for example connection timeout) and SendGrid API key is available,
-      // attempt to send via SendGrid HTTP API as a fallback.
+      // Determine if this looks like a network/connectivity error (timeout, DNS, refused, reset)
+      const networkErrorCodes = new Set(['ETIMEDOUT','ECONNREFUSED','ECONNRESET','ENOTFOUND','EHOSTUNREACH','EAI_AGAIN']);
+      const errCode = sendErr && sendErr.code ? String(sendErr.code) : '';
+      const isNetwork = networkErrorCodes.has(errCode) || /timeout|timed out|connection timeout|connection refused|ENOTFOUND|EAI_AGAIN/i.test(sendMsg);
+
+      // If SMTP send fails due to network/connectivity and SendGrid API key is available,
+      // attempt to send via SendGrid HTTP API as a fallback. Also allow fallback if explicitly configured.
       const sgKey = process.env.SENDGRID_API_KEY || '';
-      const isTimeout = (sendErr && (sendErr.code === 'ETIMEDOUT' || sendMsg.toLowerCase().includes('timeout') || sendMsg.toLowerCase().includes('connection timeout')));
-      if (sgKey && isTimeout) {
+      const forceSgFallback = String(process.env.EMAIL_FALLBACK_TO_SENDGRID || '').toLowerCase() === 'true';
+      if (sgKey && (isNetwork || forceSgFallback)) {
         try {
-          console.info('Attempting SendGrid HTTP fallback due to SMTP failure (timeout)');
+          console.info('Attempting SendGrid HTTP fallback due to SMTP failure', { isNetwork, errCode });
           const sgRes = await sendViaSendGrid({ to, from: mailOpts.from, subject, text, html, attachments }, sgKey);
           if (sgRes && sgRes.ok) {
             return { ok: true, info: { provider: 'sendgrid', response: sgRes.response } };
           }
-          // fall through to return original error if SendGrid fails
           console.warn('SendGrid fallback failed', sgRes && sgRes.error ? sgRes.error : sgRes);
         } catch (sgErr) {
           console.warn('SendGrid fallback exception', sgErr && sgErr.message ? sgErr.message : sgErr);
