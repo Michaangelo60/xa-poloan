@@ -1,6 +1,7 @@
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 
 // Reads SMTP configuration from env. Set the following in backend/.env:
 // SMTP_HOST, SMTP_PORT, SMTP_SECURE (true/false), SMTP_USER, SMTP_PASS, NOTIFY_FROM
@@ -91,8 +92,28 @@ async function sendEmail(to, subject, html, text, attachments) {
       const info = await transporter.sendMail(mailOpts);
       return { ok: true, info: { messageId: info && info.messageId, response: info && info.response } };
     } catch (sendErr) {
-      console.error('sendEmail sendMail error', sendErr && sendErr.message ? sendErr.message : sendErr);
-      return { ok: false, error: sendErr && sendErr.message ? sendErr.message : String(sendErr) };
+      const sendMsg = sendErr && sendErr.message ? sendErr.message : String(sendErr);
+      console.error('sendEmail sendMail error', sendMsg);
+
+      // If SMTP send fails (for example connection timeout) and SendGrid API key is available,
+      // attempt to send via SendGrid HTTP API as a fallback.
+      const sgKey = process.env.SENDGRID_API_KEY || '';
+      const isTimeout = (sendErr && (sendErr.code === 'ETIMEDOUT' || sendMsg.toLowerCase().includes('timeout') || sendMsg.toLowerCase().includes('connection timeout')));
+      if (sgKey && isTimeout) {
+        try {
+          console.info('Attempting SendGrid HTTP fallback due to SMTP failure (timeout)');
+          const sgRes = await sendViaSendGrid({ to, from: mailOpts.from, subject, text, html, attachments }, sgKey);
+          if (sgRes && sgRes.ok) {
+            return { ok: true, info: { provider: 'sendgrid', response: sgRes.response } };
+          }
+          // fall through to return original error if SendGrid fails
+          console.warn('SendGrid fallback failed', sgRes && sgRes.error ? sgRes.error : sgRes);
+        } catch (sgErr) {
+          console.warn('SendGrid fallback exception', sgErr && sgErr.message ? sgErr.message : sgErr);
+        }
+      }
+
+      return { ok: false, error: sendMsg };
     }
   } catch (err) {
     console.error('sendEmail error', err && err.message ? err.message : err);
@@ -117,3 +138,63 @@ module.exports.verifyTransporter = async function verifyTransporter() {
     return { ok: false, error: e && e.message ? e.message : String(e) };
   }
 };
+
+// Send via SendGrid HTTP API as a fallback when SMTP is unavailable
+async function sendViaSendGrid(opts, apiKey) {
+  try {
+    if (!apiKey) return { ok: false, error: 'no-sendgrid-key' };
+    const from = (opts && opts.from) ? opts.from : (process.env.NOTIFY_FROM || process.env.SMTP_USER || 'no-reply@example.com');
+    const toList = [];
+    if (Array.isArray(opts.to)) {
+      for (const t of opts.to) if (t) toList.push(String(t));
+    } else if (typeof opts.to === 'string') {
+      opts.to.split(',').forEach(s => { const v = s.trim(); if (v) toList.push(v); });
+    }
+    if (toList.length === 0) return { ok: false, error: 'no-recipient' };
+
+    const payload = {
+      personalizations: [
+        { to: toList.map(email => ({ email })) , subject: opts.subject || '' }
+      ],
+      from: { email: (from && from.indexOf('<') === -1) ? from : String(from).replace(/^.*<|>$/g, '') },
+      content: []
+    };
+    if (opts.text) payload.content.push({ type: 'text/plain', value: String(opts.text) });
+    if (opts.html) payload.content.push({ type: 'text/html', value: String(opts.html) });
+
+    const body = JSON.stringify(payload);
+
+    const reqOpts = {
+      method: 'POST',
+      hostname: 'api.sendgrid.com',
+      path: '/v3/mail/send',
+      headers: {
+        'Authorization': 'Bearer ' + apiKey,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    };
+
+    return await new Promise((resolve) => {
+      const req = https.request(reqOpts, (res) => {
+        const chunks = [];
+        res.on('data', d => chunks.push(d));
+        res.on('end', () => {
+          const txt = Buffer.concat(chunks).toString('utf8');
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ ok: true, response: { statusCode: res.statusCode, body: txt } });
+          } else {
+            resolve({ ok: false, error: `status ${res.statusCode}`, response: { statusCode: res.statusCode, body: txt } });
+          }
+        });
+      });
+      req.on('error', (e) => {
+        resolve({ ok: false, error: e && e.message ? e.message : String(e) });
+      });
+      req.write(body);
+      req.end();
+    });
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+}
