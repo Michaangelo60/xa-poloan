@@ -60,11 +60,13 @@ function loanNotification(user, tx) {
 function welcomeNotification(user) {
   const title = 'Welcome to XapoBank';
   const pre = `Hello ${user.name || ''}, your account has been created.`;
+  // Build a safe client URL (prefer explicit CLIENT_URL; default to Render host)
+  const clientUrl = (process.env.CLIENT_URL || 'https://xa-poloan.onrender.com').replace(/\/$/, '');
   const body = `<div style="text-align:center;margin-bottom:12px;"><img src="cid:xapo-header" alt="Xapo Bank" style="max-width:100%;height:auto"/></div><h1>Hello Dear ${user.name || ''},</h1>
     <p>We're excited to let you know that your account has been successfully created! Thank you for joining Xapobank.</p>
     <h3>Getting Started:</h3>
     <ol>
-      <li>Log In: Visit <a href="${process.env.CLIENT_URL || 'https://xapoloan.vercel.app'}/signsignup/signin.html">${process.env.CLIENT_URL || 'https://xapoloan.vercel.app'}/signsignup/signin.html</a> and log in using your email and the password you created.</li>
+      <li>Log In: Visit <a href="${clientUrl}/signsignup/signin.html">${clientUrl}/signsignup/signin.html</a> and log in using your email and the password you created.</li>
       <li>Explore: Check out our features and find out how you can make the most of your experience.</li>
       <li>Support: If you have any questions, our support team is here to help at ${process.env.SUPPORT_EMAIL || 'support@xapobank.example'}.</li>
     </ol>
@@ -77,7 +79,7 @@ function welcomeNotification(user) {
     Xapo VASP Limited is a company registered and incorporated in Gibraltar with company No. 118088. Xapo VASP Limited is regulated by the Gibraltar Financial Services Commission under the Financial Services Act 2019 as a Distributed Ledger Technology Provider under Permission No. 26061.<br/>
     Eligible fiat deposits are protected by the Gibraltar Deposit Guarantee Scheme.</p>`;
   const html = wrapHtml(title, pre, body);
-  const text = `Hello ${user.name || ''},\n\nWe're excited to let you know that your account has been successfully created!\n\nLog In: ${process.env.CLIENT_URL || 'https://xapoloan.vercel.app'}/signsignup/signin.html\nSupport: ${process.env.SUPPORT_EMAIL || 'support@xapobank.example'}\n\nBest Regards,\nXapo bank Team.`;
+  const text = `Hello ${user.name || ''},\n\nWe're excited to let you know that your account has been successfully created!\n\nLog In: ${clientUrl}/signsignup/signin.html\nSupport: ${process.env.SUPPORT_EMAIL || 'support@xapobank.example'}\n\nBest Regards,\nXapo bank Team.`;
   return { subject: 'Welcome to XapoBank', html, text, cid: 'xapo-header' };
 }
 
