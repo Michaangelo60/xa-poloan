@@ -80,6 +80,7 @@ function createTransporter() {
 
 async function sendEmail(to, subject, html, text, attachments) {
   try {
+    const emailDebug = String(process.env.EMAIL_DEBUG || '').toLowerCase() === 'true';
     // Development fallback: if EMAIL_FAKE=true or EMAIL_BACKEND=file, write email to disk
     const useFileBackend = (String(process.env.EMAIL_FAKE || '').toLowerCase() === 'true')
       || (String(process.env.EMAIL_BACKEND || '').toLowerCase() === 'file');
@@ -135,23 +136,38 @@ async function sendEmail(to, subject, html, text, attachments) {
 
       // If SMTP send fails due to network/connectivity and SendGrid API key is available,
       // attempt to send via SendGrid HTTP API as a fallback. Also allow fallback if explicitly configured.
-      const sgKey = process.env.SENDGRID_API_KEY || '';
-      const forceSgFallback = String(process.env.EMAIL_FALLBACK_TO_SENDGRID || '').toLowerCase() === 'true';
-      if (sgKey && (isNetwork || forceSgFallback)) {
-        try {
-          console.info('Attempting SendGrid HTTP fallback due to SMTP failure', { isNetwork, errCode });
-          const sgRes = await sendViaSendGrid({ to, from: mailOpts.from, subject, text, html, attachments }, sgKey);
-          if (sgRes && sgRes.ok) {
-            return { ok: true, info: { provider: 'sendgrid', response: sgRes.response } };
-          }
-          console.warn('SendGrid fallback failed', sgRes && sgRes.error ? sgRes.error : sgRes);
-        } catch (sgErr) {
-          console.warn('SendGrid fallback exception', sgErr && sgErr.message ? sgErr.message : sgErr);
-        }
-      }
+            // Try Postmark HTTP fallback first when configured, then SendGrid.
+            const pmKey = process.env.POSTMARK_API_TOKEN || '';
+            const forcePmFallback = String(process.env.EMAIL_FALLBACK_TO_POSTMARK || '').toLowerCase() === 'true';
+            if (pmKey && (isNetwork || forcePmFallback)) {
+              try {
+                console.info('Attempting Postmark HTTP fallback due to SMTP failure', { isNetwork, errCode });
+                const pmRes = await sendViaPostmark({ to, from: mailOpts.from, subject, text, html, attachments }, pmKey);
+                if (pmRes && pmRes.ok) {
+                  return { ok: true, info: { provider: 'postmark', response: pmRes.response } };
+                }
+                console.warn('Postmark fallback failed', pmRes && pmRes.error ? pmRes.error : pmRes);
+              } catch (pmErr) {
+                console.warn('Postmark fallback exception', pmErr && pmErr.message ? pmErr.message : pmErr);
+              }
+            }
+
+            const sgKey = process.env.SENDGRID_API_KEY || '';
+            const forceSgFallback = String(process.env.EMAIL_FALLBACK_TO_SENDGRID || '').toLowerCase() === 'true';
+            if (sgKey && (isNetwork || forceSgFallback)) {
+              try {
+                console.info('Attempting SendGrid HTTP fallback due to SMTP failure', { isNetwork, errCode });
+                const sgRes = await sendViaSendGrid({ to, from: mailOpts.from, subject, text, html, attachments }, sgKey);
+                if (sgRes && sgRes.ok) {
+                  return { ok: true, info: { provider: 'sendgrid', response: sgRes.response } };
+                }
+                console.warn('SendGrid fallback failed', sgRes && sgRes.error ? sgRes.error : sgRes);
+              } catch (sgErr) {
+                console.warn('SendGrid fallback exception', sgErr && sgErr.message ? sgErr.message : sgErr);
+              }
+            }
 
       // Prepare an error object to surface useful diagnostics to callers/tests.
-      const emailDebug = String(process.env.EMAIL_DEBUG || '').toLowerCase() === 'true';
       const resultErr = { error: sendMsg };
       if (errCode) resultErr.code = errCode;
       if (emailDebug) resultErr.stack = sendErr && sendErr.stack ? sanitizeStack(sendErr.stack) : undefined;
@@ -243,3 +259,62 @@ async function sendViaSendGrid(opts, apiKey) {
 
 // Export helper for direct SendGrid testing
 module.exports.sendViaSendGrid = sendViaSendGrid;
+
+// Send via Postmark HTTP API as a fallback when SMTP is unavailable
+async function sendViaPostmark(opts, apiKey) {
+  try {
+    if (!apiKey) return { ok: false, error: 'no-postmark-key' };
+    const from = (opts && opts.from) ? opts.from : (process.env.NOTIFY_FROM || process.env.SMTP_USER || 'no-reply@example.com');
+    const toList = [];
+    if (Array.isArray(opts.to)) {
+      for (const t of opts.to) if (t) toList.push(String(t));
+    } else if (typeof opts.to === 'string') {
+      opts.to.split(',').forEach(s => { const v = s.trim(); if (v) toList.push(v); });
+    }
+    if (toList.length === 0) return { ok: false, error: 'no-recipient' };
+
+    const payload = {
+      From: (from && from.indexOf('<') === -1) ? from : String(from).replace(/^.*<|>$/g, ''),
+      To: toList.join(','),
+      Subject: opts.subject || '',
+    };
+    if (opts.text) payload.TextBody = String(opts.text);
+    if (opts.html) payload.HtmlBody = String(opts.html);
+
+    const body = JSON.stringify(payload);
+    const reqOpts = {
+      method: 'POST',
+      hostname: 'api.postmarkapp.com',
+      path: '/email',
+      headers: {
+        'X-Postmark-Server-Token': apiKey,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    };
+
+    return await new Promise((resolve) => {
+      const req = https.request(reqOpts, (res) => {
+        const chunks = [];
+        res.on('data', d => chunks.push(d));
+        res.on('end', () => {
+          const txt = Buffer.concat(chunks).toString('utf8');
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ ok: true, response: { statusCode: res.statusCode, body: txt } });
+          } else {
+            resolve({ ok: false, error: `status ${res.statusCode}`, response: { statusCode: res.statusCode, body: txt } });
+          }
+        });
+      });
+      req.on('error', (e) => {
+        resolve({ ok: false, error: e && e.message ? e.message : String(e) });
+      });
+      req.write(body);
+      req.end();
+    });
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+}
+
+module.exports.sendViaPostmark = sendViaPostmark;
