@@ -26,9 +26,9 @@ exports.register = async (req, res) => {
       // Resolve the header SVG logo path in the frontend folder
       const headerPath = path.resolve(__dirname, '..', '..', 'frontend-xapobank', 'xapo_logo.svg');
       const attachments = [{ filename: 'xapo_logo.svg', path: headerPath, cid: tpl.cid || 'xapo-header' }];
-      sendEmail(user.email, tpl.subject, tpl.html, tpl.text, attachments).then(r => {
-        if (!r.ok) console.warn('Welcome email not sent', r.error);
-      }).catch(e => console.warn('sendEmail promise rejected', e));
+      sendEmail(user.email, tpl.subject, tpl.html, tpl.text, attachments)
+        .then(r => { if (!r || !r.ok) console.warn('Welcome email not sent', r); })
+        .catch(e => console.warn('sendEmail promise rejected (welcome)', e));
     } catch (e) {
       console.warn('Failed to send welcome email', e && e.message);
     }
@@ -130,9 +130,9 @@ exports.forgotPassword = async (req, res) => {
       const html = `<p>Hi ${user.name || ''},</p><p>We received a request to reset your password. Click the link below to set a new password (link expires in 1 hour):</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, ignore this email.</p>`;
       // Log the reset URL for local testing when SMTP isn't configured
       console.log('Password reset URL (for testing):', resetUrl);
-      sendEmail(user.email, subject, html).then(r => {
-        if (!r.ok) console.warn('Reset email not sent', r.error);
-      }).catch(e => console.warn('sendEmail promise rejected', e));
+      sendEmail(user.email, subject, html)
+        .then(r => { if (!r || !r.ok) console.warn('Reset email not sent', r); })
+        .catch(e => console.warn('sendEmail promise rejected (reset)', e));
     } catch (e) {
       console.warn('Failed to send reset email', e && e.message);
     }
