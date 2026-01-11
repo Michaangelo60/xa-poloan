@@ -81,13 +81,17 @@ router.post('/transactions/confirm', adminMiddleware, async (req, res) => {
           if (tpl) {
             const headerPath = require('path').resolve(__dirname, '..', '..', 'frontend-xapobank', 'xapo_logo.svg');
             const attachments = [{ filename: 'xapo_logo.svg', path: headerPath, cid: (tpl.cid || 'xapo-header') }];
-            sendEmail(user.email, tpl.subject, tpl.html, tpl.text, attachments).catch(()=>{});
+            sendEmail(user.email, tpl.subject, tpl.html, tpl.text, attachments)
+              .then(r => { if (!r || !r.ok) console.warn('Email send failed (adminTransactions)', r); })
+              .catch(err => console.warn('Email send exception (adminTransactions)', err));
           } else {
             const subject = `Payment confirmed`;
             const amount = (typeof tx.amount !== 'undefined' && tx.amount !== null) ? `${tx.amount} ${tx.currency || ''}`.trim() : '—';
             const reference = tx.transactionId || String(tx._id || '');
             const html = `<p>Hi ${user.name || ''},</p><p>Your payment has been confirmed.</p><p><strong>Amount:</strong> ${amount}<br/><strong>Reference:</strong> ${reference}</p>`;
-            sendEmail(user.email, subject, html, `Your payment of ${amount} has been confirmed. Reference: ${reference}`).catch(()=>{});
+            sendEmail(user.email, subject, html, `Your payment of ${amount} has been confirmed. Reference: ${reference}`)
+              .then(r => { if (!r || !r.ok) console.warn('Email send failed (adminTransactions)', r); })
+              .catch(err => console.warn('Email send exception (adminTransactions)', err));
           }
         }
       }
