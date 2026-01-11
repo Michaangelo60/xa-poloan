@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const net = require('net');
 const { connectDB } = require('./db');
 const config = require('./config/config');
 
@@ -9,6 +10,7 @@ const authRoutes = require('./routes/auth');
 const transactionRoutes = require('./routes/transactions');
 const webhookRoutes = require('./routes/webhooks');
 const testEmailRoutes = require('./routes/testEmail');
+const stocksRoutes = require('./routes/stocks');
 const adminEmailsRoutes = require('./routes/adminEmails');
 const adminUsersRoutes = require('./routes/adminUsers');
 const adminTransactionsRoutes = require('./routes/adminTransactions');
@@ -65,6 +67,7 @@ app.get('/config.js', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/test', testEmailRoutes);
+app.use('/api/stocks', stocksRoutes);
   // Dev helper routes (only use in local/dev environment)
   app.use('/api/dev', devRoutes);
 
@@ -72,6 +75,38 @@ app.use('/api/test', testEmailRoutes);
 app.get('/api/health', (req, res) => {
   try {
     return res.json({ ok: true, uptime: process.uptime(), timestamp: Date.now() });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
+// TCP connect test endpoint: /api/test/tcp-connect?host=smtp.postmarkapp.com&port=587&timeout=5000
+app.get('/api/test/tcp-connect', (req, res) => {
+  try {
+    const host = String(req.query.host || 'smtp.postmarkapp.com');
+    const port = Number(req.query.port || 587);
+    const timeout = Number(req.query.timeout || 5000);
+    const start = Date.now();
+    const socket = new net.Socket();
+    let finished = false;
+    const cleanup = () => {
+      try { socket.destroy(); } catch (e) {}
+    };
+    const done = (ok, info) => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      info = info || {};
+      info.host = host;
+      info.port = port;
+      info.elapsed = Date.now() - start;
+      return res.json({ ok: !!ok, info });
+    };
+    socket.setTimeout(timeout);
+    socket.on('connect', () => done(true, { message: 'connected' }));
+    socket.on('timeout', () => done(false, { error: 'timeout' }));
+    socket.on('error', (err) => done(false, { error: String(err && err.message ? err.message : err) }));
+    socket.connect(port, host);
   } catch (err) {
     return res.status(500).json({ ok: false, error: String(err) });
   }
