@@ -3,6 +3,24 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
+// Sanitize stack traces to remove absolute host-specific paths (e.g. /opt/render/project/src/)
+function sanitizeStack(stack) {
+  if (!stack || typeof stack !== 'string') return stack;
+  try {
+    const cwd = process.cwd();
+    // Escape for use in RegExp
+    const esc = cwd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Remove the current working directory prefix and normalize repeated slashes
+    let s = stack.replace(new RegExp(esc, 'g'), '');
+    // Also strip common CI/host prefixes that may appear
+    s = s.replace(/\/opt\/render\/project\/src\//g, '');
+    s = s.replace(/\\\\/g, '/');
+    return s;
+  } catch (e) {
+    return stack;
+  }
+}
+
 // Reads SMTP configuration from env. Set the following in backend/.env:
 // SMTP_HOST, SMTP_PORT, SMTP_SECURE (true/false), SMTP_USER, SMTP_PASS, NOTIFY_FROM
 
@@ -51,7 +69,7 @@ function createTransporter() {
       console.debug('Email transporter verified OK', logSafe);
     }).catch(err => {
       console.warn('Email transporter verify failed', err && err.message ? err.message : String(err));
-      if (emailDebug && err && err.stack) console.warn(err.stack);
+      if (emailDebug && err && err.stack) console.warn(sanitizeStack(err.stack));
     });
     return transporter;
   } catch (err) {
@@ -109,6 +127,7 @@ async function sendEmail(to, subject, html, text, attachments) {
       const sendMsg = sendErr && sendErr.message ? sendErr.message : String(sendErr);
       const errCode = sendErr && sendErr.code ? String(sendErr.code) : '';
       console.error('sendEmail sendMail error', sendMsg, errCode ? ('code=' + errCode) : '');
+      if (emailDebug && sendErr && sendErr.stack) console.error(sanitizeStack(sendErr.stack));
 
       // Determine if this looks like a network/connectivity error (timeout, DNS, refused, reset)
       const networkErrorCodes = new Set(['ETIMEDOUT','ECONNREFUSED','ECONNRESET','ENOTFOUND','EHOSTUNREACH','EAI_AGAIN']);
@@ -135,7 +154,7 @@ async function sendEmail(to, subject, html, text, attachments) {
       const emailDebug = String(process.env.EMAIL_DEBUG || '').toLowerCase() === 'true';
       const resultErr = { error: sendMsg };
       if (errCode) resultErr.code = errCode;
-      if (emailDebug) resultErr.stack = sendErr && sendErr.stack ? sendErr.stack : undefined;
+      if (emailDebug) resultErr.stack = sendErr && sendErr.stack ? sanitizeStack(sendErr.stack) : undefined;
       return Object.assign({ ok: false }, resultErr);
     }
   } catch (err) {
