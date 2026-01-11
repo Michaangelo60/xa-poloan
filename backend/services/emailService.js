@@ -107,11 +107,11 @@ async function sendEmail(to, subject, html, text, attachments) {
       return { ok: true, info: { messageId: info && info.messageId, response: info && info.response } };
     } catch (sendErr) {
       const sendMsg = sendErr && sendErr.message ? sendErr.message : String(sendErr);
-      console.error('sendEmail sendMail error', sendMsg);
+      const errCode = sendErr && sendErr.code ? String(sendErr.code) : '';
+      console.error('sendEmail sendMail error', sendMsg, errCode ? ('code=' + errCode) : '');
 
       // Determine if this looks like a network/connectivity error (timeout, DNS, refused, reset)
       const networkErrorCodes = new Set(['ETIMEDOUT','ECONNREFUSED','ECONNRESET','ENOTFOUND','EHOSTUNREACH','EAI_AGAIN']);
-      const errCode = sendErr && sendErr.code ? String(sendErr.code) : '';
       const isNetwork = networkErrorCodes.has(errCode) || /timeout|timed out|connection timeout|connection refused|ENOTFOUND|EAI_AGAIN/i.test(sendMsg);
 
       // If SMTP send fails due to network/connectivity and SendGrid API key is available,
@@ -131,7 +131,12 @@ async function sendEmail(to, subject, html, text, attachments) {
         }
       }
 
-      return { ok: false, error: sendMsg };
+      // Prepare an error object to surface useful diagnostics to callers/tests.
+      const emailDebug = String(process.env.EMAIL_DEBUG || '').toLowerCase() === 'true';
+      const resultErr = { error: sendMsg };
+      if (errCode) resultErr.code = errCode;
+      if (emailDebug) resultErr.stack = sendErr && sendErr.stack ? sendErr.stack : undefined;
+      return Object.assign({ ok: false }, resultErr);
     }
   } catch (err) {
     console.error('sendEmail error', err && err.message ? err.message : err);
