@@ -143,7 +143,9 @@ exports.approveTransaction = async (req, res) => {
             const amount = (typeof tx.amount !== 'undefined' && tx.amount !== null) ? `${tx.amount} ${tx.currency || ''}`.trim() : '—';
             const reference = tx.transactionId || String(tx._id || '');
             const html = `<p>Hi ${user.name || ''},</p><p>Your payment has been confirmed.</p><p><strong>Amount:</strong> ${amount}<br/><strong>Reference:</strong> ${reference}</p>`;
-            sendEmail(user.email, subject, html, `Your payment of ${amount} has been confirmed. Reference: ${reference}`).catch(() => {});
+            sendEmail(user.email, subject, html, `Your payment of ${amount} has been confirmed. Reference: ${reference}`)
+              .then(r => { if (!r || !r.ok) console.warn('Payment confirmation email not sent (adminController)', r); })
+              .catch(e => console.warn('sendEmail promise rejected (adminController)', e && e.message));
           }
         }
       }
