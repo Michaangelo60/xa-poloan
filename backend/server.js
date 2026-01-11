@@ -10,7 +10,12 @@ const authRoutes = require('./routes/auth');
 const transactionRoutes = require('./routes/transactions');
 const webhookRoutes = require('./routes/webhooks');
 const testEmailRoutes = require('./routes/testEmail');
-const stocksRoutes = require('./routes/stocks');
+let stocksRoutes = null;
+try {
+  stocksRoutes = require('./routes/stocks');
+} catch (e) {
+  console.warn('Optional route ./routes/stocks not found — skipping /api/stocks (this is OK if stocks feature removed)');
+}
 const adminEmailsRoutes = require('./routes/adminEmails');
 const adminUsersRoutes = require('./routes/adminUsers');
 const adminTransactionsRoutes = require('./routes/adminTransactions');
@@ -67,7 +72,7 @@ app.get('/config.js', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/test', testEmailRoutes);
-app.use('/api/stocks', stocksRoutes);
+if (stocksRoutes) app.use('/api/stocks', stocksRoutes);
   // Dev helper routes (only use in local/dev environment)
   app.use('/api/dev', devRoutes);
 
