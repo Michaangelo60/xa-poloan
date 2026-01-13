@@ -48,6 +48,12 @@ exports.login = async (req, res) => {
   try {
     // Debug: log incoming payload to help diagnose empty responses during login
     try { console.debug('DEBUG /api/auth/login request body:', req && req.body); } catch (e) {}
+    // Additional diagnostic logging: record user-agent and origin for troubleshooting
+    try {
+      const ua = req.get && req.get('user-agent');
+      const origin = req.get && (req.get('origin') || (req.protocol + '://' + req.get('host')));
+      console.info('LOGIN ATTEMPT', { ip: req.ip, ua: ua || '', origin: origin || '' });
+    } catch (e) { /* non-fatal */ }
     let { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ success: false, message: 'Missing fields' });
     email = String(email).trim().toLowerCase();
@@ -57,6 +63,7 @@ exports.login = async (req, res) => {
     try { ok = await comparePassword(password, user.passwordHash); } catch (e) { ok = false; }
     if (!ok) return res.status(401).json({ success: false, message: 'Invalid credentials' });
     const token = signToken({ id: user._id, email: user.email, name: user.name, role: user.role });
+    try { console.info('LOGIN SUCCESS', { email: user.email, id: user._id ? String(user._id) : '', tokenPresent: !!token }); } catch (e) {}
     // include createdAt, membership flag and role for client UI
     const payload = { id: user._id, email: user.email, name: user.name, createdAt: user.createdAt, isMember: user.isMember, role: user.role };
     // Debug: log response payload
