@@ -54,3 +54,25 @@ router.post('/create-admin', async (req, res) => {
 
 module.exports = router;
 
+// Debug endpoint: echo request headers and body (redacts Authorization)
+router.post('/echo-req', async (req, res) => {
+  try {
+    const headers = {};
+    for (const h in req.headers) {
+      try {
+        if (h.toLowerCase() === 'authorization') {
+          headers[h] = req.headers[h] ? '[REDACTED]' : '';
+        } else {
+          headers[h] = req.headers[h];
+        }
+      } catch (e) { headers[h] = String(req.headers[h]); }
+    }
+    // include connection info for debugging
+    const info = { ip: req.ip, method: req.method, url: req.originalUrl };
+    return res.json({ ok: true, headers, body: req.body || null, info });
+  } catch (err) {
+    console.error('echo-req error', err);
+    return res.status(500).json({ ok: false, error: 'server error' });
+  }
+});
+
