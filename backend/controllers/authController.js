@@ -1,182 +1,180 @@
-const Transaction = require('../models/Transaction');
 const User = require('../models/User');
-const { sendEmail } = require('../services/emailService');
-const { membershipNotification, depositNotification, loanNotification, withdrawalNotification } = require('../templates/emailTemplates');
+const { hashPassword, comparePassword } = require('../services/hashService');
+const { signToken } = require('../services/tokenService');
+const config = require('../config/config');
+const crypto = require('crypto');
 const path = require('path');
-const { emitToUser, emitToAdmins } = require('../services/socketService');
 
-exports.listPending = async (req, res) => {
+
+
+exports.register = async (req, res) => {
   try {
-    const filter = {};
-    if (req.query.status) filter.status = req.query.status;
-    else filter.status = 'Pending';
-    const items = await Transaction.find(filter).sort({ timestamp: -1 }).limit(200);
-    return res.json({ isOk: true, data: items });
+    // Accept either `name` or `fullName` from clients (some frontends send `name`).
+    const { name, fullName, email, password, phone, country } = req.body;
+    const userName = (name || fullName || '').trim();
+    if (!email || !password) return res.status(400).json({ success: false, message: 'Missing fields' });
+    const existing = await User.findOne({ email });
+    if (existing) return res.status(400).json({ success: false, message: 'Email already exists' });
+    const passwordHash = await hashPassword(password);
+    const user = await User.create({ name: userName, email, passwordHash, phone: phone || '', country: country || '' });
+    const payload = { id: user._id, email: user.email, name: user.name, phone: user.phone, country: user.country, createdAt: user.createdAt, isMember: user.isMember, role: user.role };
+    const token = signToken({ id: user._id, email: user.email, name: user.name, role: user.role });
+
+    // send welcome email (best-effort, non-blocking) with header image attachment
+    try {
+      const { sendEmail } = require('../services/emailService');
+      const { welcomeNotification } = require('../templates/emailTemplates');
+      const tpl = welcomeNotification(user);
+      // Resolve the header SVG logo path in the frontend folder
+      const headerPath = path.resolve(__dirname, '..', '..', 'frontend-xapobank', 'xapo_logo.svg');
+      const attachments = [{ filename: 'xapo_logo.svg', path: headerPath, cid: tpl.cid || 'xapo-header' }];
+      sendEmail(user.email, tpl.subject, tpl.html, tpl.text, attachments)
+        .then(r => { if (!r || !r.ok) console.warn('Welcome email not sent', r); })
+        .catch(e => console.warn('sendEmail promise rejected (welcome)', e));
+    } catch (e) {
+      console.warn('Failed to send welcome email', e && e.message);
+    }
+
+    return res.status(201).json({ success: true, message: 'Account created', token, data: payload });
+  } catch (err) {
+    console.error('Register error:', err && err.message ? err.message : err);
+    // Handle duplicate key (race conditions) more gracefully
+    if (err && err.code === 11000) {
+      return res.status(400).json({ success: false, message: 'Email already exists' });
+    }
+    return res.status(500).json({ success: false, message: err && err.message ? err.message : 'Server error' });
+  }
+};
+
+exports.login = async (req, res) => {
+  try {
+    // Debug: log incoming payload to help diagnose empty responses during login
+    try { console.debug('DEBUG /api/auth/login request body:', req && req.body); } catch (e) {}
+    // Additional diagnostic logging: record user-agent and origin for troubleshooting
+    try {
+      const ua = req.get && req.get('user-agent');
+      const origin = req.get && (req.get('origin') || (req.protocol + '://' + req.get('host')));
+      console.info('LOGIN ATTEMPT', { ip: req.ip, ua: ua || '', origin: origin || '' });
+    } catch (e) { /* non-fatal */ }
+    let { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ success: false, message: 'Missing fields' });
+    email = String(email).trim().toLowerCase();
+    const user = await User.findOne({ email });
+    if (!user || !user.passwordHash) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    let ok = false;
+    try { ok = await comparePassword(password, user.passwordHash); } catch (e) { ok = false; }
+    if (!ok) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    const token = signToken({ id: user._id, email: user.email, name: user.name, role: user.role });
+    try { console.info('LOGIN SUCCESS', { email: user.email, id: user._id ? String(user._id) : '', tokenPresent: !!token }); } catch (e) {}
+    // include createdAt, membership flag and role for client UI
+    const payload = { id: user._id, email: user.email, name: user.name, createdAt: user.createdAt, isMember: user.isMember, role: user.role };
+    // Debug: log response payload
+    try { console.debug('DEBUG /api/auth/login response:', { success: true, token: token ? '[REDACTED]' : token, data: payload }); } catch (e) {}
+    return res.json({ success: true, token, data: payload });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ isOk: false, error: 'Server error' });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
-// Approve transaction and trigger membership logic if applicable
-exports.approveTransaction = async (req, res) => {
+exports.me = async (req, res) => {
   try {
-    const { id } = req.params;
-    const tx = await Transaction.findById(id) || await Transaction.findOne({ transactionId: id });
-    if (!tx) return res.status(404).json({ isOk: false, error: 'Transaction not found' });
-
-    tx.status = 'Completed';
-    await tx.save();
-
-    // If this was a loan, create a disbursement deposit and apply balances server-side
-    try {
-      if (tx.type && String(tx.type).toLowerCase() === 'loan' && (tx.loanAmount || 0) > 0 && tx.userId) {
-        const deposit = {
-          type: 'deposit',
-          amount: Number(tx.loanAmount || 0),
-          currency: tx.currency || 'USD',
-          status: 'Completed',
-          timestamp: new Date().toISOString(),
-          userId: tx.userId,
-          userName: tx.userName || '',
-          userEmail: tx.userEmail || '',
-          description: 'Loan disbursement',
-          collateralBTC: 0,
-          loanAmount: 0,
-          transactionId: (tx.transactionId ? String(tx.transactionId) : String(tx._id || Date.now())) + '_DISB'
-        };
-        const createdDep = await Transaction.create(deposit);
-        // apply to user balances immediately
-        try {
-          const user = await User.findById(tx.userId);
-          if (user) {
-            user.savingsBalanceUSD = (user.savingsBalanceUSD || 0) + Number(createdDep.amount || 0);
-            await user.save();
-            // mark deposit applied
-            createdDep.appliedToBalances = true;
-            await createdDep.save();
-            try { emitToUser(tx.userId, 'user:updated', { id: user._id, savingsBalanceUSD: user.savingsBalanceUSD, collateralBalanceUSD: user.collateralBalanceUSD }); } catch (e) {}
-          }
-        } catch (e) { console.warn('apply loan disbursement to user failed', e && e.message); }
-        // notify user about the new deposit transaction
-        try { if (tx.userId) emitToUser(tx.userId, 'transaction:created', createdDep); } catch (e) {}
-      }
-    } catch (e) { console.warn('creating disbursement on approve failed', e && e.message); }
-
-    // notify user about transaction update
-    try {
-      if (tx.userId) emitToUser(tx.userId, 'transaction:updated', tx);
-    } catch (e) { console.warn('emitToUser failed on admin approve', e && e.message); }
-    // notify other admins about the change
-    try { emitToAdmins('transaction:updated', tx); } catch (e) { /* ignore */ }
-
-    // If this was a withdrawal referencing a loan, reduce the loan outstanding amount
-    try {
-      if (tx.type && String(tx.type).toLowerCase() === 'withdrawal' && tx.relatedLoanId && tx.userId) {
-        // try to find the related loan by _id or transactionId
-        let loanTx = null;
-        try { loanTx = await Transaction.findById(tx.relatedLoanId); } catch (e) { /* ignore */ }
-        if (!loanTx) loanTx = await Transaction.findOne({ transactionId: String(tx.relatedLoanId) });
-        if (loanTx) {
-          const loanAmt = Number(loanTx.loanAmount || loanTx.amount || 0);
-          const withdrawAmt = Number(tx.amount || 0);
-          const newOutstanding = Math.max(0, loanAmt - withdrawAmt);
-          // update both loanAmount and amount fields for UI consistency
-          loanTx.loanAmount = newOutstanding;
-          loanTx.amount = newOutstanding;
-          // If loan is fully withdrawn/paid out, mark as completed
-          if (newOutstanding <= 0) loanTx.status = 'Completed';
-          await loanTx.save();
-          // emit updates for loan transaction so frontend refreshes activity/repayments
-          try { emitToUser(loanTx.userId, 'transaction:updated', loanTx); } catch (e) {}
-          try { emitToAdmins('transaction:updated', loanTx); } catch (e) {}
-        }
-      }
-    } catch (e) { console.warn('Failed to adjust related loan after withdrawal approve', e && e.message); }
-
-    // membership update logic
-    try {
-      const s = String(tx.status || '').toLowerCase();
-      const isCompleted = s === 'completed' || s === 'confirmed' || s === 'complete';
-      const isMembershipTx = (tx.type && tx.type.toLowerCase() === 'membership')
-        || (tx.type && tx.type.toLowerCase() === 'deposit' && (tx.amount || 0) >= 1000 && String(tx.description || '').toLowerCase().includes('membership'));
-      if (isMembershipTx && isCompleted && tx.userId) {
-        const user = await User.findById(tx.userId);
-        if (user) {
-          user.isMember = true;
-          user.membershipPaidAmount = tx.amount || user.membershipPaidAmount || 0;
-          user.membershipPaidAt = tx.timestamp ? new Date(tx.timestamp) : new Date();
-          const paidAt = user.membershipPaidAt || new Date();
-          const expires = new Date(paidAt);
-          expires.setFullYear(expires.getFullYear() + 1);
-          user.membershipExpiresAt = expires;
-          try {
-            if (!user.membershipId) user.membershipId = `MBR-${Date.now().toString(36)}-${require('crypto').randomBytes(3).toString('hex')}`;
-          } catch (e) { user.membershipId = user.membershipId || `MBR-${Date.now()}`; }
-          await user.save();
-          emitToUser(tx.userId, 'user:updated', { id: user._id, isMember: user.isMember, membershipPaidAmount: user.membershipPaidAmount, membershipPaidAt: user.membershipPaidAt, membershipExpiresAt: user.membershipExpiresAt, membershipId: user.membershipId });
-        }
-      }
-    } catch (e) {
-      console.warn('Membership update failed on admin approve:', e && e.message);
-    }
-
-    // send payment confirmation email (best-effort)
-    try {
-      if (tx.userId) {
-        const user = await User.findById(tx.userId);
-        if (user && user.email) {
-          const ttype = String(tx.type || 'payment').toLowerCase();
-          let tpl = null;
-          if (ttype === 'membership') tpl = membershipNotification(user, tx);
-          else if (ttype === 'deposit') tpl = depositNotification(user, tx);
-          else if (ttype === 'loan') tpl = loanNotification(user, tx);
-          else if (ttype === 'withdrawal' || ttype === 'withdraw') tpl = withdrawalNotification(user, tx);
-          if (tpl) {
-            const headerPath = path.resolve(__dirname, '..', '..', 'frontend-xapobank', 'xapo_logo.svg');
-            const attachments = [{ filename: 'xapo_logo.svg', path: headerPath, cid: (tpl.cid || 'xapo-header') }];
-            sendEmail(user.email, tpl.subject, tpl.html, tpl.text, attachments).then(r => {
-              if (!r.ok) console.warn('Payment confirmation email not sent', r.error);
-            }).catch(e => console.warn('sendEmail promise rejected for payment confirmation', e && e.message));
-          } else {
-            const subject = `Payment confirmed`;
-            const amount = (typeof tx.amount !== 'undefined' && tx.amount !== null) ? `${tx.amount} ${tx.currency || ''}`.trim() : '—';
-            const reference = tx.transactionId || String(tx._id || '');
-            const html = `<p>Hi ${user.name || ''},</p><p>Your payment has been confirmed.</p><p><strong>Amount:</strong> ${amount}<br/><strong>Reference:</strong> ${reference}</p>`;
-            sendEmail(user.email, subject, html, `Your payment of ${amount} has been confirmed. Reference: ${reference}`)
-              .then(r => { if (!r || !r.ok) console.warn('Payment confirmation email not sent (adminController)', r); })
-              .catch(e => console.warn('sendEmail promise rejected (adminController)', e && e.message));
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('Payment confirmation email failed:', e && e.message);
-    }
-
-    return res.json({ isOk: true, data: tx });
+    if (!req.user) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const user = await User.findById(req.user.id).select('-passwordHash');
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    return res.json({ success: true, data: user });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ isOk: false, error: 'Server error' });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
-// Fetch transactions for a specific user. Query with ?email=... or ?userId=...
-exports.getUserTransactions = async (req, res) => {
+exports.updateProfile = async (req, res) => {
   try {
-    const { email, userId } = req.query;
-    let user = null;
-    if (email) user = await User.findOne({ email: String(email).toLowerCase().trim() });
-    if (!user && userId) user = await User.findById(userId).catch(() => null);
+    if (!req.user) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const { name, email, phone, country } = req.body;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    if (!user) {
-      // If no user found, return empty list rather than 404 to make the admin UX simpler.
-      return res.json({ isOk: true, data: [] });
+    if (email && email !== user.email) {
+      const exists = await User.findOne({ email });
+      if (exists) return res.status(400).json({ success: false, message: 'Email already in use' });
+      user.email = email;
     }
 
-    const items = await Transaction.find({ userId: user._id }).sort({ timestamp: -1 }).limit(500);
-    return res.json({ isOk: true, data: items });
+    if (name) user.name = name;
+    if (typeof phone !== 'undefined') user.phone = phone;
+    if (typeof country !== 'undefined') user.country = country;
+
+    await user.save();
+    const cleaned = { id: user._id, name: user.name, email: user.email, phone: user.phone, country: user.country };
+    return res.json({ success: true, message: 'Profile updated', data: cleaned });
   } catch (err) {
-    console.error('getUserTransactions error', err);
-    return res.status(500).json({ isOk: false, error: 'Server error' });
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 };
+
+// Request a password reset: generate token, save to user, email link
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, message: 'Email required' });
+    const user = await User.findOne({ email });
+    if (!user) return res.status(200).json({ success: true, message: "If that email exists, we've sent instructions" });
+
+    const token = crypto.randomBytes(24).toString('hex');
+    const expires = Date.now() + 1000 * 60 * 60; // 1 hour
+    user.resetPasswordToken = token;
+    user.resetPasswordExpires = new Date(expires);
+    await user.save();
+
+    try {
+      const { sendEmail } = require('../services/emailService');
+      // Prefer explicit CLIENT_URL, but fall back to the request origin so local dev works
+      const origin = (req && (req.get && (req.get('origin') || req.protocol + '://' + req.get('host')))) || config.CLIENT_URL || 'http://localhost:5000';
+      const resetBase = (config.CLIENT_URL && config.CLIENT_URL !== 'http://localhost:8000') ? config.CLIENT_URL.replace(/\/$/, '') : origin.replace(/\/$/, '');
+      const resetUrl = `${resetBase}/reset-password.html?token=${token}&email=${encodeURIComponent(user.email)}`;
+      const subject = 'Reset your password';
+      const html = `<p>Hi ${user.name || ''},</p><p>We received a request to reset your password. Click the link below to set a new password (link expires in 1 hour):</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, ignore this email.</p>`;
+      // Log the reset URL for local testing when SMTP isn't configured
+      console.log('Password reset URL (for testing):', resetUrl);
+      sendEmail(user.email, subject, html)
+        .then(r => { if (!r || !r.ok) console.warn('Reset email not sent', r); })
+        .catch(e => console.warn('sendEmail promise rejected (reset)', e));
+    } catch (e) {
+      console.warn('Failed to send reset email', e && e.message);
+    }
+
+    return res.json({ success: true, message: 'If that email exists we sent instructions' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// Perform password reset using token
+exports.resetPassword = async (req, res) => {
+  try {
+    const { email, token, password } = req.body;
+    if (!email || !token || !password) return res.status(400).json({ success: false, message: 'Missing fields' });
+    const user = await User.findOne({ email, resetPasswordToken: token });
+    if (!user) return res.status(400).json({ success: false, message: 'Invalid token or email' });
+    if (!user.resetPasswordExpires || user.resetPasswordExpires < Date.now()) {
+      return res.status(400).json({ success: false, message: 'Token expired' });
+    }
+
+    user.passwordHash = await hashPassword(password);
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    return res.json({ success: true, message: 'Password has been updated' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+
+
