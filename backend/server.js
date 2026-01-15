@@ -2,44 +2,16 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const net = require('net');
 const { connectDB } = require('./db');
 const config = require('./config/config');
 
-let authRoutes = null;
-let transactionRoutes = null;
-let webhookRoutes = null;
-let testEmailRoutes = null;
-let stocksRoutes = null;
-let adminEmailsRoutes = null;
-let adminUsersRoutes = null;
-let adminTransactionsRoutes = null;
-let supportRoutes = null;
-let identityRoutes = null;
-let devRoutes = null;
-
-function tryRequireRoute(relPath, varName) {
-  try {
-    const r = require(relPath);
-    console.debug(`Loaded route ${relPath}`);
-    return r;
-  } catch (e) {
-    console.error(`Failed to require route ${relPath}:`, e && e.message ? e.message : e);
-    return null;
-  }
-}
-
-authRoutes = tryRequireRoute('./routes/auth', 'auth');
-transactionRoutes = tryRequireRoute('./routes/transactions', 'transactions');
-webhookRoutes = tryRequireRoute('./routes/webhooks', 'webhooks');
-testEmailRoutes = tryRequireRoute('./routes/testEmail', 'testEmail');
-stocksRoutes = tryRequireRoute('./routes/stocks', 'stocks');
-adminEmailsRoutes = tryRequireRoute('./routes/adminEmails', 'adminEmails');
-adminUsersRoutes = tryRequireRoute('./routes/adminUsers', 'adminUsers');
-adminTransactionsRoutes = tryRequireRoute('./routes/adminTransactions', 'adminTransactions');
-supportRoutes = tryRequireRoute('./routes/support', 'support');
-identityRoutes = tryRequireRoute('./routes/identity', 'identity');
-devRoutes = tryRequireRoute('./routes/dev', 'dev');
+const authRoutes = require('./routes/auth');
+const transactionRoutes = require('./routes/transactions');
+const webhookRoutes = require('./routes/webhooks');
+const testEmailRoutes = require('./routes/testEmail');
+const supportRoutes = require('./routes/support');
+const identityRoutes = require('./routes/identity');
+const devRoutes = require('./routes/dev');
 
 const app = express();
 
@@ -71,65 +43,17 @@ app.get('/.well-known/appspecific/com.chrome.devtools.json', (req, res) => {
   res.send(JSON.stringify({ name: 'xapobank-dev', url: config.CLIENT_URL || 'http://localhost:8000' }));
 });
 
-// Serve a small runtime config JS so static sites can read backend URL at runtime.
-app.get('/config.js', (req, res) => {
-  try {
-    // Return the backend's origin so static frontends know where to reach the API.
-    // Prefer an explicit env var `BACKEND_ORIGIN` (for proxies or custom domains),
-    // otherwise derive from the incoming request host.
-    const apiBase = (config.BACKEND_ORIGIN || (req.protocol + '://' + req.get('host'))).replace(/\/$/, '');
-    res.type('application/javascript');
-    return res.send(`window.API_BASE = '${apiBase}';`);
-  } catch (e) {
-    res.type('application/javascript');
-    return res.send(`window.API_BASE = '';`);
-  }
-});
-
-// API routes — mount only routes that loaded successfully
-if (authRoutes) app.use('/api/auth', authRoutes); else console.warn('Skipping mounting /api/auth — route failed to load');
-if (transactionRoutes) app.use('/api/transactions', transactionRoutes); else console.warn('Skipping mounting /api/transactions — route failed to load');
-if (testEmailRoutes) app.use('/api/test', testEmailRoutes); else console.warn('Skipping mounting /api/test — route failed to load');
-if (stocksRoutes) app.use('/api/stocks', stocksRoutes);
-// Dev helper routes (only use in local/dev environment)
-if (devRoutes) app.use('/api/dev', devRoutes); else console.warn('Skipping mounting /api/dev — route failed to load');
+// API routes
+app.use('/api/auth', authRoutes);
+app.use('/api/transactions', transactionRoutes);
+app.use('/api/test', testEmailRoutes);
+  // Dev helper routes (only use in local/dev environment)
+  app.use('/api/dev', devRoutes);
 
 // Lightweight health check for load balancers and Render
 app.get('/api/health', (req, res) => {
   try {
     return res.json({ ok: true, uptime: process.uptime(), timestamp: Date.now() });
-  } catch (err) {
-    return res.status(500).json({ ok: false, error: String(err) });
-  }
-});
-
-// TCP connect test endpoint: /api/test/tcp-connect?host=smtp.postmarkapp.com&port=587&timeout=5000
-app.get('/api/test/tcp-connect', (req, res) => {
-  try {
-    const host = String(req.query.host || 'smtp.postmarkapp.com');
-    const port = Number(req.query.port || 587);
-    const timeout = Number(req.query.timeout || 5000);
-    const start = Date.now();
-    const socket = new net.Socket();
-    let finished = false;
-    const cleanup = () => {
-      try { socket.destroy(); } catch (e) {}
-    };
-    const done = (ok, info) => {
-      if (finished) return;
-      finished = true;
-      cleanup();
-      info = info || {};
-      info.host = host;
-      info.port = port;
-      info.elapsed = Date.now() - start;
-      return res.json({ ok: !!ok, info });
-    };
-    socket.setTimeout(timeout);
-    socket.on('connect', () => done(true, { message: 'connected' }));
-    socket.on('timeout', () => done(false, { error: 'timeout' }));
-    socket.on('error', (err) => done(false, { error: String(err && err.message ? err.message : err) }));
-    socket.connect(port, host);
   } catch (err) {
     return res.status(500).json({ ok: false, error: String(err) });
   }
@@ -148,43 +72,9 @@ app.use('/frontend-xapobank', express.static(path.join(__dirname, '..', 'fronten
 app.use('/admin', express.static(path.join(__dirname, '..', 'transaction-admin-site')));
 // Admin UI removed
 
-// Serve the root normally; client-side will redirect unauthenticated users to signup.
-
 const start = async () => {
   try {
     await connectDB(config.MONGO_URI);
-    // Ensure admin user exists when ADMIN_ID or ADMIN_EMAIL provided in env/config
-    try {
-      const User = require('./models/User');
-      const { hashPassword } = require('./services/hashService');
-      const adminId = config.ADMIN_ID;
-      const adminEmail = config.ADMIN_EMAIL;
-      if (adminId || adminEmail) {
-        let existing = null;
-        try {
-          if (adminId) existing = await User.findById(adminId);
-        } catch (e) { existing = null; }
-        if (!existing && adminEmail) {
-          existing = await User.findOne({ email: adminEmail });
-        }
-        if (!existing) {
-          // create admin user with a random password
-          const pwd = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2,6);
-          const passwordHash = await hashPassword(pwd);
-          const createData = { name: 'Admin', email: adminEmail || (`admin-${String(Date.now()).slice(-6)}@local`), passwordHash, role: 'admin' };
-          if (adminId) createData._id = adminId;
-          const created = await User.create(createData);
-          console.log('Auto-created admin user at startup:');
-          console.log('  id:   ', created._id.toString());
-          console.log('  email:', created.email);
-          console.log('  password (temporary):', pwd);
-        } else {
-          console.log('Admin user already exists:', existing._id ? String(existing._id) : existing.email);
-        }
-      }
-    } catch (e) {
-      console.warn('Admin auto-create check failed', e && e.message ? e.message : e);
-    }
     const server = require('http').createServer(app);
     // initialize socket service
     const { init: initSockets } = require('./services/socketService');
@@ -195,10 +85,6 @@ const start = async () => {
     app.use('/api/identity', identityRoutes);
       // support route
       app.use('/api/support', supportRoutes);
-    // admin debug routes (list fake-sent emails)
-    app.use('/api/admin', adminEmailsRoutes);
-    app.use('/api/admin', adminUsersRoutes);
-    app.use('/api/admin', adminTransactionsRoutes);
     // mount webhook routes
     app.use('/api/webhooks', webhookRoutes);
     server.listen(config.PORT, () => {
