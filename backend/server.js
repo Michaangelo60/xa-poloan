@@ -6,22 +6,40 @@ const net = require('net');
 const { connectDB } = require('./db');
 const config = require('./config/config');
 
-const authRoutes = require('./routes/auth');
-const transactionRoutes = require('./routes/transactions');
-const webhookRoutes = require('./routes/webhooks');
-const testEmailRoutes = require('./routes/testEmail');
+let authRoutes = null;
+let transactionRoutes = null;
+let webhookRoutes = null;
+let testEmailRoutes = null;
 let stocksRoutes = null;
-try {
-  stocksRoutes = require('./routes/stocks');
-} catch (e) {
-  console.warn('Optional route ./routes/stocks not found — skipping /api/stocks (this is OK if stocks feature removed)');
+let adminEmailsRoutes = null;
+let adminUsersRoutes = null;
+let adminTransactionsRoutes = null;
+let supportRoutes = null;
+let identityRoutes = null;
+let devRoutes = null;
+
+function tryRequireRoute(relPath, varName) {
+  try {
+    const r = require(relPath);
+    console.debug(`Loaded route ${relPath}`);
+    return r;
+  } catch (e) {
+    console.error(`Failed to require route ${relPath}:`, e && e.message ? e.message : e);
+    return null;
+  }
 }
-const adminEmailsRoutes = require('./routes/adminEmails');
-const adminUsersRoutes = require('./routes/adminUsers');
-const adminTransactionsRoutes = require('./routes/adminTransactions');
-const supportRoutes = require('./routes/support');
-const identityRoutes = require('./routes/identity');
-const devRoutes = require('./routes/dev');
+
+authRoutes = tryRequireRoute('./routes/auth', 'auth');
+transactionRoutes = tryRequireRoute('./routes/transactions', 'transactions');
+webhookRoutes = tryRequireRoute('./routes/webhooks', 'webhooks');
+testEmailRoutes = tryRequireRoute('./routes/testEmail', 'testEmail');
+stocksRoutes = tryRequireRoute('./routes/stocks', 'stocks');
+adminEmailsRoutes = tryRequireRoute('./routes/adminEmails', 'adminEmails');
+adminUsersRoutes = tryRequireRoute('./routes/adminUsers', 'adminUsers');
+adminTransactionsRoutes = tryRequireRoute('./routes/adminTransactions', 'adminTransactions');
+supportRoutes = tryRequireRoute('./routes/support', 'support');
+identityRoutes = tryRequireRoute('./routes/identity', 'identity');
+devRoutes = tryRequireRoute('./routes/dev', 'dev');
 
 const app = express();
 
