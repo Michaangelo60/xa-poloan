@@ -4,7 +4,8 @@ const { signToken } = require('../services/tokenService');
 const config = require('../config/config');
 const crypto = require('crypto');
 const path = require('path');
-
+const User = require('../models/User');
+const { hashPassword: _hashPassword } = require('../services/hashService');
 
 
 exports.register = async (req, res) => {
@@ -15,7 +16,7 @@ exports.register = async (req, res) => {
     if (!email || !password) return res.status(400).json({ success: false, message: 'Missing fields' });
     const existing = await User.findOne({ email });
     if (existing) return res.status(400).json({ success: false, message: 'Email already exists' });
-    const passwordHash = await hashPassword(password);
+    const passwordHash = await _hashPassword(password);
     const user = await User.create({ name: userName, email, passwordHash, phone: phone || '', country: country || '' });
     const payload = { id: user._id, email: user.email, name: user.name, phone: user.phone, country: user.country, createdAt: user.createdAt, isMember: user.isMember, role: user.role };
     const token = signToken({ id: user._id, email: user.email, name: user.name, role: user.role });
