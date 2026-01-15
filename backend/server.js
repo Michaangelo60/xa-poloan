@@ -86,13 +86,13 @@ app.get('/config.js', (req, res) => {
   }
 });
 
-// API routes
-app.use('/api/auth', authRoutes);
-app.use('/api/transactions', transactionRoutes);
-app.use('/api/test', testEmailRoutes);
+// API routes — mount only routes that loaded successfully
+if (authRoutes) app.use('/api/auth', authRoutes); else console.warn('Skipping mounting /api/auth — route failed to load');
+if (transactionRoutes) app.use('/api/transactions', transactionRoutes); else console.warn('Skipping mounting /api/transactions — route failed to load');
+if (testEmailRoutes) app.use('/api/test', testEmailRoutes); else console.warn('Skipping mounting /api/test — route failed to load');
 if (stocksRoutes) app.use('/api/stocks', stocksRoutes);
-  // Dev helper routes (only use in local/dev environment)
-  app.use('/api/dev', devRoutes);
+// Dev helper routes (only use in local/dev environment)
+if (devRoutes) app.use('/api/dev', devRoutes); else console.warn('Skipping mounting /api/dev — route failed to load');
 
 // Lightweight health check for load balancers and Render
 app.get('/api/health', (req, res) => {
