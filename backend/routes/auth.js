@@ -23,7 +23,6 @@ safeRegisterPost('/register', authController.register, 'register');
 safeRegisterPost('/forgot', authController.forgotPassword, 'forgotPassword');
 safeRegisterPost('/reset', authController.resetPassword, 'resetPassword');
 // admin endpoints removed
-router.get('/me', authMiddleware, authController.me);
 // Guard GET/PATCH registrations as well to avoid crashing when handlers are missing
 function safeRegisterGet(path, ...handlers) {
 	const last = handlers[handlers.length - 1];
