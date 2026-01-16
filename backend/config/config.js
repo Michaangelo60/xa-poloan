@@ -10,7 +10,7 @@ module.exports = {
   CLIENT_URL: process.env.CLIENT_URL || 'https://xapoloan.onrender.com',
   // Backend origin used by runtime /config.js when the backend serves the value.
   // Can be overridden via the BACKEND_ORIGIN env var in Render.
-  BACKEND_ORIGIN: process.env.BACKEND_ORIGIN || 'https://xa-poloan.onrender.com',
+  BACKEND_ORIGIN: process.env.BACKEND_ORIGIN || 'https://xapoloan.onrender.com',
   ADMIN_EMAIL: process.env.ADMIN_EMAIL || null,
   ADMIN_ID: process.env.ADMIN_ID || null
 };
