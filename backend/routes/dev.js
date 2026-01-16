@@ -52,8 +52,6 @@ router.post('/create-admin', async (req, res) => {
   }
 });
 
-module.exports = router;
-
 // Debug endpoint: echo request headers and body (redacts Authorization)
 router.post('/echo-req', async (req, res) => {
   try {
@@ -75,4 +73,29 @@ router.post('/echo-req', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'server error' });
   }
 });
+
+// Dev-only: return a signed token for the given email (creates user if not exists)
+router.post('/token-check', async (req, res) => {
+  try {
+    if ((process.env.NODE_ENV || config.NODE_ENV || 'development') === 'production') {
+      return res.status(403).json({ success: false, message: 'Not allowed in production' });
+    }
+    const { email, name } = req.body || {};
+    if (!email) return res.status(400).json({ success: false, message: 'email required' });
+    let user = await User.findOne({ email });
+    if (!user) {
+      const pwd = Math.random().toString(36).slice(2,10);
+      const passwordHash = await hashPassword(pwd);
+      user = await User.create({ name: name || 'DevUser', email, passwordHash });
+      console.log('Dev token-check created user', email);
+    }
+    const token = signToken({ id: user._id, email: user.email, name: user.name, role: user.role });
+    return res.json({ success: true, token, data: { id: user._id, email: user.email, name: user.name } });
+  } catch (err) {
+    console.error('token-check error', err);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+module.exports = router;
 
