@@ -42,7 +42,9 @@ devRoutes = tryRequireRoute('./routes/dev', 'dev');
 
 const app = express();
 
-app.use(cors());
+// Configure CORS to expose custom headers so SW / clients can read
+// diagnostic headers like X-Token-Present and X-Token-Length on cross-origin responses.
+app.use(cors({ exposedHeaders: ['X-Token-Present', 'X-Token-Length', 'Content-Type'] }));
 app.use(express.json());
 
 // Development-friendly Content Security Policy to allow local sockets and API calls.
