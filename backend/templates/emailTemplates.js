@@ -61,7 +61,7 @@ function welcomeNotification(user) {
   const title = 'Welcome to XapoBank';
   const pre = `Hello ${user.name || ''}, your account has been created.`;
   // Build a safe client URL (prefer explicit CLIENT_URL; default to Render host)
-  const clientUrl = (process.env.CLIENT_URL || 'https://xa-poloan.onrender.com').replace(/\/$/, '');
+  const clientUrl = (process.env.CLIENT_URL || 'https://xapoloan.onrender.com').replace(/\/$/, '');
   const body = `<div style="text-align:center;margin-bottom:12px;"><img src="cid:xapo-header" alt="Xapo Bank" style="max-width:100%;height:auto"/></div><h1>Hello Dear ${user.name || ''},</h1>
     <p>We're excited to let you know that your account has been successfully created! Thank you for joining Xapobank.</p>
     <h3>Getting Started:</h3>
