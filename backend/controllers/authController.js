@@ -18,6 +18,9 @@ exports.register = async (req, res) => {
     const payload = { id: user._id, email: user.email, name: user.name, phone: user.phone, country: user.country, createdAt: user.createdAt, isMember: user.isMember, role: user.role };
     const token = signToken({ id: user._id, email: user.email, name: user.name, role: user.role });
 
+    // Diagnostic: log token generation (redacted) to help debug missing-token cases
+    try { console.info('REGISTER TOKEN', { email: user.email, tokenPresent: !!token, tokenPreview: token ? (String(token).slice(0,8) + '...') : null }); } catch (e) {}
+
     // send welcome email (best-effort, non-blocking) with header image attachment
     try {
       const { sendEmail } = require('../services/emailService');
@@ -55,6 +58,8 @@ exports.login = async (req, res) => {
     try { ok = await comparePassword(password, user.passwordHash); } catch (e) { ok = false; }
     if (!ok) return res.status(401).json({ success: false, message: 'Invalid credentials' });
     const token = signToken({ id: user._id, email: user.email, name: user.name, role: user.role });
+    // Diagnostic: log token generation (redacted) to help debug missing-token cases
+    try { console.info('LOGIN TOKEN', { email: user.email, id: user._id ? String(user._id) : '', tokenPresent: !!token, tokenPreview: token ? (String(token).slice(0,8) + '...') : null }); } catch (e) {}
     // include createdAt, membership flag and role for client UI
     const payload = { id: user._id, email: user.email, name: user.name, createdAt: user.createdAt, isMember: user.isMember, role: user.role };
     return res.json({ success: true, token, data: payload });
