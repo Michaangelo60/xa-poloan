@@ -190,16 +190,16 @@ const start = async () => {
     initSockets(server);
     // serve uploaded files
     app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-    // identity routes
-    app.use('/api/identity', identityRoutes);
-      // support route
-      app.use('/api/support', supportRoutes);
-    // admin debug routes (list fake-sent emails)
-    app.use('/api/admin', adminEmailsRoutes);
-    app.use('/api/admin', adminUsersRoutes);
-    app.use('/api/admin', adminTransactionsRoutes);
-    // mount webhook routes
-    app.use('/api/webhooks', webhookRoutes);
+    // identity routes (optional)
+    if (identityRoutes) app.use('/api/identity', identityRoutes); else console.warn('Skipping mounting /api/identity — route failed to load');
+    // support route (optional)
+    if (supportRoutes) app.use('/api/support', supportRoutes); else console.warn('Skipping mounting /api/support — route failed to load');
+    // admin debug routes (optional)
+    if (adminEmailsRoutes) app.use('/api/admin', adminEmailsRoutes); else console.warn('Skipping mounting adminEmailsRoutes — route failed to load');
+    if (adminUsersRoutes) app.use('/api/admin', adminUsersRoutes); else console.warn('Skipping mounting adminUsersRoutes — route failed to load');
+    if (adminTransactionsRoutes) app.use('/api/admin', adminTransactionsRoutes); else console.warn('Skipping mounting adminTransactionsRoutes — route failed to load');
+    // mount webhook routes (optional)
+    if (webhookRoutes) app.use('/api/webhooks', webhookRoutes); else console.warn('Skipping mounting /api/webhooks — route failed to load');
     server.listen(config.PORT, () => {
       console.log(`Server listening on port ${config.PORT}`);
     });
