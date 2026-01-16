@@ -57,7 +57,8 @@ app.use((req, res, next) => {
     // Allow connections to local backend, sockets and DevTools-specific endpoints for development
     "connect-src 'self' http://localhost:5000 http://127.0.0.1:5000 http://127.0.0.1 ws://localhost:5000 wss://localhost:5000 http://localhost https://localhost https://api.coingecko.com chrome-devtools://* devtools://*; " +
     "img-src 'self' data: file: blob: https:; " +
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com http://localhost:5000; " +
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://telegram.org http://localhost:5000; " +
+    "script-src-elem 'self' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://telegram.org 'unsafe-inline'; " +
     "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com;";
   res.setHeader('Content-Security-Policy', csp);
   next();
