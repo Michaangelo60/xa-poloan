@@ -36,6 +36,8 @@ exports.register = async (req, res) => {
       console.warn('Failed to send welcome email', e && e.message);
     }
 
+    try { if (token) res.set('X-Token-Present', '1'); else res.set('X-Token-Present', '0'); if (token) res.set('X-Token-Length', String(String(token).length)); } catch (e) {}
+    console.info('REGISTER RESPONSE', { email: user.email, tokenPresent: !!token, tokenLength: token ? String(token).length : 0 });
     return res.status(201).json({ success: true, message: 'Account created', token, data: payload });
   } catch (err) {
     console.error('Register error:', err && err.message ? err.message : err);
@@ -60,6 +62,8 @@ exports.login = async (req, res) => {
     const token = signToken({ id: user._id, email: user.email, name: user.name, role: user.role });
     // Diagnostic: log token generation (redacted) to help debug missing-token cases
     try { console.info('LOGIN TOKEN', { email: user.email, id: user._id ? String(user._id) : '', tokenPresent: !!token, tokenPreview: token ? (String(token).slice(0,8) + '...') : null }); } catch (e) {}
+    try { if (token) res.set('X-Token-Present', '1'); else res.set('X-Token-Present', '0'); if (token) res.set('X-Token-Length', String(String(token).length)); } catch (e) {}
+    console.info('LOGIN RESPONSE', { email: user.email, id: user._id ? String(user._id) : '', tokenPresent: !!token, tokenLength: token ? String(token).length : 0 });
     // include createdAt, membership flag and role for client UI
     const payload = { id: user._id, email: user.email, name: user.name, createdAt: user.createdAt, isMember: user.isMember, role: user.role };
     return res.json({ success: true, token, data: payload });
