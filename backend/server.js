@@ -6,22 +6,39 @@ const net = require('net');
 const { connectDB } = require('./db');
 const config = require('./config/config');
 
-const authRoutes = require('./routes/auth');
-const transactionRoutes = require('./routes/transactions');
-const webhookRoutes = require('./routes/webhooks');
-const testEmailRoutes = require('./routes/testEmail');
-let stocksRoutes = null;
-try {
-  stocksRoutes = require('./routes/stocks');
-} catch (e) {
-  console.warn('Optional route ./routes/stocks not found — skipping /api/stocks (this is OK if stocks feature removed)');
+function tryRequireRoute(path, name) {
+  try {
+    return require(path);
+  } catch (e) {
+    console.warn(`Optional route ${path} not found — skipping /api/${name}`, e.message);
+    return null;
+  }
 }
-const adminEmailsRoutes = require('./routes/adminEmails');
-const adminUsersRoutes = require('./routes/adminUsers');
-const adminTransactionsRoutes = require('./routes/adminTransactions');
-const supportRoutes = require('./routes/support');
-const identityRoutes = require('./routes/identity');
-const devRoutes = require('./routes/dev');
+
+let authRoutes = tryRequireRoute('./routes/auth', 'auth');
+let transactionRoutes = tryRequireRoute('./routes/transactions', 'transactions');
+let webhookRoutes = tryRequireRoute('./routes/webhooks', 'webhooks');
+let testEmailRoutes = tryRequireRoute('./routes/testEmail', 'testEmail');
+
+let stocksRoutes = null;
+let adminEmailsRoutes = tryRequireRoute('./routes/adminEmails', 'adminEmails');
+let adminUsersRoutes = tryRequireRoute('./routes/adminUsers', 'adminUsers');
+let adminTransactionsRoutes = tryRequireRoute('./routes/adminTransactions', 'adminTransactions');
+let supportRoutes = tryRequireRoute('./routes/support', 'support');
+let identityRoutes = tryRequireRoute('./routes/identity', 'identity');
+let devRoutes = tryRequireRoute('./routes/dev', 'dev');
+
+authRoutes = tryRequireRoute('./routes/auth', 'auth');
+transactionRoutes = tryRequireRoute('./routes/transactions', 'transactions');
+webhookRoutes = tryRequireRoute('./routes/webhooks', 'webhooks');
+testEmailRoutes = tryRequireRoute('./routes/testEmail', 'testEmail');
+stocksRoutes = tryRequireRoute('./routes/stocks', 'stocks');
+adminEmailsRoutes = tryRequireRoute('./routes/adminEmails', 'adminEmails');
+adminUsersRoutes = tryRequireRoute('./routes/adminUsers', 'adminUsers');
+adminTransactionsRoutes = tryRequireRoute('./routes/adminTransactions', 'adminTransactions');
+supportRoutes = tryRequireRoute('./routes/support', 'support');
+identityRoutes = tryRequireRoute('./routes/identity', 'identity');
+devRoutes = tryRequireRoute('./routes/dev', 'dev');
 
 const app = express();
 
@@ -68,13 +85,13 @@ app.get('/config.js', (req, res) => {
   }
 });
 
-// API routes
-app.use('/api/auth', authRoutes);
-app.use('/api/transactions', transactionRoutes);
-app.use('/api/test', testEmailRoutes);
+// API routes — mount only routes that loaded successfully
+if (authRoutes) app.use('/api/auth', authRoutes); else console.warn('Skipping mounting /api/auth — route failed to load');
+if (transactionRoutes) app.use('/api/transactions', transactionRoutes); else console.warn('Skipping mounting /api/transactions — route failed to load');
+if (testEmailRoutes) app.use('/api/test', testEmailRoutes); else console.warn('Skipping mounting /api/test — route failed to load');
 if (stocksRoutes) app.use('/api/stocks', stocksRoutes);
-  // Dev helper routes (only use in local/dev environment)
-  app.use('/api/dev', devRoutes);
+// Dev helper routes (only use in local/dev environment)
+if (devRoutes) app.use('/api/dev', devRoutes); else console.warn('Skipping mounting /api/dev — route failed to load');
 
 // Lightweight health check for load balancers and Render
 app.get('/api/health', (req, res) => {
