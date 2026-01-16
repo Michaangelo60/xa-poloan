@@ -55,10 +55,16 @@ exports.login = async (req, res) => {
     if (!email || !password) return res.status(400).json({ success: false, message: 'Missing fields' });
     email = String(email).trim().toLowerCase();
     const user = await User.findOne({ email });
-    if (!user || !user.passwordHash) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    if (!user || !user.passwordHash) {
+      try { console.info('LOGIN FAIL - no user or missing passwordHash', { email }); } catch (e) {}
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
     let ok = false;
     try { ok = await comparePassword(password, user.passwordHash); } catch (e) { ok = false; }
-    if (!ok) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    if (!ok) {
+      try { console.info('LOGIN FAIL - password mismatch', { email }); } catch (e) {}
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
     const token = signToken({ id: user._id, email: user.email, name: user.name, role: user.role });
     // Diagnostic: log token generation (redacted) to help debug missing-token cases
     try { console.info('LOGIN TOKEN', { email: user.email, id: user._id ? String(user._id) : '', tokenPresent: !!token, tokenPreview: token ? (String(token).slice(0,8) + '...') : null }); } catch (e) {}
