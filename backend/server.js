@@ -76,6 +76,33 @@ app.use('/signsignup', express.static(frontendRoot));
 // Also allow the explicit folder path to be reachable (so requests to
 // /frontend-xapobank/index.html work and receive the server CSP headers).
 app.use('/frontend-xapobank', express.static(frontendRoot));
+
+// Explicit fallback routes for sign-in / sign-up to avoid 404s when static
+// middleware or deploy layout differs. These send the exact HTML files if present
+// and otherwise return 404 so logs expose the missing-file path.
+app.get(['/signsignup/signin.html', '/signin.html'], (req, res) => {
+  const file = path.join(frontendRoot, 'signin.html');
+  if (fs.existsSync(file)) return res.sendFile(file);
+  console.warn('signin.html not found at', file);
+  return res.status(404).send('signin.html not found');
+});
+
+app.get(['/signsignup/signup.html', '/signup.html'], (req, res) => {
+  const file = path.join(frontendRoot, 'signup.html');
+  if (fs.existsSync(file)) return res.sendFile(file);
+  console.warn('signup.html not found at', file);
+  return res.status(404).send('signup.html not found');
+});
+
+// Catch-all under /signsignup: try to serve the requested file, else fall back to signin.html
+app.get('/signsignup/*', (req, res, next) => {
+  const rel = req.path.replace(/^\/signsignup\//, '');
+  const candidate = path.join(frontendRoot, rel);
+  if (fs.existsSync(candidate)) return res.sendFile(candidate);
+  const fallback = path.join(frontendRoot, 'signin.html');
+  if (fs.existsSync(fallback)) return res.sendFile(fallback);
+  next();
+});
 // Serve the standalone admin site so it can be accessed over HTTP (avoids file:// CSP restrictions)
 app.use('/admin', express.static(path.join(__dirname, '..', 'transaction-admin-site')));
 // Admin UI removed
@@ -107,3 +134,4 @@ const start = async () => {
 start();
 
 module.exports = app;
+
