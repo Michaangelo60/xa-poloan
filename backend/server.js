@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const { connectDB } = require('./db');
 const config = require('./config/config');
 
@@ -59,15 +60,22 @@ app.get('/api/health', (req, res) => {
   }
 });
 
+// Determine frontend folder location. Prefer a copied local folder (backend/frontend-xapobank)
+// so deploy systems that copy the frontend into the backend directory (postinstall) work.
+const frontendLocal = path.join(__dirname, 'frontend-xapobank');
+const frontendSibling = path.join(__dirname, '..', 'frontend-xapobank');
+const frontendRoot = fs.existsSync(frontendLocal) ? frontendLocal : frontendSibling;
+console.log('Frontend static root:', frontendRoot);
+
 // Serve frontend static files (optional)
-app.use(express.static(path.join(__dirname, '..', 'frontend-xapobank')));
+app.use(express.static(frontendRoot));
 // Also serve the sign-up / sign-in pages under /signsignup URI by mapping to the
 // frontend-xapobank folder (these files live in frontend-xapobank). This allows
 // requests to /signsignup/signin.html and /signsignup/signup.html to resolve.
-app.use('/signsignup', express.static(path.join(__dirname, '..', 'frontend-xapobank')));
+app.use('/signsignup', express.static(frontendRoot));
 // Also allow the explicit folder path to be reachable (so requests to
 // /frontend-xapobank/index.html work and receive the server CSP headers).
-app.use('/frontend-xapobank', express.static(path.join(__dirname, '..', 'frontend-xapobank')));
+app.use('/frontend-xapobank', express.static(frontendRoot));
 // Serve the standalone admin site so it can be accessed over HTTP (avoids file:// CSP restrictions)
 app.use('/admin', express.static(path.join(__dirname, '..', 'transaction-admin-site')));
 // Admin UI removed
