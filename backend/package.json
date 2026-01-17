@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
+    "postinstall": "cp -R ../frontend-xapobank ./frontend-xapobank || true",
     "dev": "nodemon server.js",
     "test": "jest --runInBand"
   },
@@ -23,3 +24,4 @@
     "supertest": "^7.1.4"
   }
 }
+
