@@ -6,10 +6,14 @@ const validateProfile = require('../middleware/validateProfile');
 
 router.post('/login', authController.login);
 router.post('/register', authController.register);
+router.get('/me', authMiddleware, authController.me);
 router.post('/forgot', authController.forgotPassword);
 router.post('/reset', authController.resetPassword);
-// admin endpoints removed
-router.get('/me', authMiddleware, authController.me);
 router.patch('/me', authMiddleware, validateProfile, authController.updateProfile);
+
+
+
+
+// admin endpoints removed
 
 module.exports = router;
