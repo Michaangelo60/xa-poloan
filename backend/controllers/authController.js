@@ -10,11 +10,12 @@ exports.register = async (req, res) => {
     // Accept either `name` or `fullName` from clients (some frontends send `name`).
     const { name, fullName, email, password, phone, country } = req.body;
     const userName = (name || fullName || '').trim();
-    if (!email || !password) return res.status(400).json({ success: false, message: 'Missing fields' });
-    const existing = await User.findOne({ email });
+    const normalizedEmail = String(email).trim().toLowerCase();
+    if (!normalizedEmail || !password) return res.status(400).json({ success: false, message: 'Missing fields' });
+    const existing = await User.findOne({ email: normalizedEmail });
     if (existing) return res.status(400).json({ success: false, message: 'Email already exists' });
     const passwordHash = await hashPassword(password);
-    const user = await User.create({ name: userName, email, passwordHash, phone: phone || '', country: country || '' });
+    const user = await User.create({ name: userName, email: normalizedEmail, passwordHash, phone: phone || '', country: country || '' });
     const payload = { id: user._id, email: user.email, name: user.name, phone: user.phone, country: user.country, createdAt: user.createdAt, isMember: user.isMember, role: user.role };
     const token = signToken({ id: user._id, email: user.email, name: user.name, role: user.role });
 
@@ -68,7 +69,21 @@ exports.login = async (req, res) => {
     const token = signToken({ id: user._id, email: user.email, name: user.name, role: user.role });
     // Diagnostic: log token generation (redacted) to help debug missing-token cases
     try { console.info('LOGIN TOKEN', { email: user.email, id: user._id ? String(user._id) : '', tokenPresent: !!token, tokenPreview: token ? (String(token).slice(0,8) + '...') : null }); } catch (e) {}
-    try { if (token) res.set('X-Token-Present', '1'); else res.set('X-Token-Present', '0'); if (token) res.set('X-Token-Length', String(String(token).length)); } catch (e) {}
+    // Ensure headers are set explicitly and expose them for debugging even if CORS middleware is absent upstream
+    try {
+      if (token) {
+        res.setHeader('X-Token-Present', '1');
+        res.setHeader('X-Token-Length', String(String(token).length));
+      } else {
+        res.setHeader('X-Token-Present', '0');
+        res.setHeader('X-Token-Length', '0');
+        console.error('LOGIN: token is falsy after signToken()');
+      }
+      // Also ensure these headers are exposed to browsers when CORS is in play
+      try { res.setHeader('Access-Control-Expose-Headers', 'X-Token-Present,X-Token-Length,Content-Type'); } catch (e) {}
+    } catch (e) {
+      console.warn('Failed to set diagnostic headers for login', e && e.message ? e.message : e);
+    }
     console.info('LOGIN RESPONSE', { email: user.email, id: user._id ? String(user._id) : '', tokenPresent: !!token, tokenLength: token ? String(token).length : 0 });
     // include createdAt, membership flag and role for client UI
     const payload = { id: user._id, email: user.email, name: user.name, createdAt: user.createdAt, isMember: user.isMember, role: user.role };
